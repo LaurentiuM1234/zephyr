@@ -42,3 +42,5 @@ CONFIG_PINCTRL=y
 
 # Enable dynamic interrupts
 CONFIG_DYNAMIC_INTERRUPTS=y
+
+CONFIG_DAI=y
