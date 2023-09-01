@@ -81,6 +81,13 @@
 		#clock-cells = <3>;
 	};
 
+	ccm_dummy: clock-controller@44450000 {
+		compatible = "nxp,imx-ccm-rev3";
+		reg = <0x44450000 DT_SIZE_K(64)>, // CCM base
+			<0x44480000 DT_SIZE_K(64)>; // PLL base
+		#clock-cells = <2>;
+	};
+
 	lpuart1: serial@44380000 {
 		compatible = "nxp,imx-lpuart", "nxp,kinetis-lpuart";
 		reg = <0x44380000 DT_SIZE_K(64)>;
