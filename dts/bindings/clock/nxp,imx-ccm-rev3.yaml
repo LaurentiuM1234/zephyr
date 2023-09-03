@@ -1,0 +1,25 @@
+# Copyright 2023 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+description: i.MX CCM (Clock Controller Module) Rev 3 IP node
+
+compatible: "nxp,imx-ccm-rev3"
+
+include: [clock-controller.yaml, base.yaml]
+
+properties:
+  "#clock-cells":
+    const: 1
+    description: |
+      Number of clock cells a clock consummer must specify.
+
+      The clocks property must have the following structure:
+      	clocks = <&ccm CLOCK_ID1>, <&ccm CLOCK_ID2>...
+
+      where CLOCK_IDx is a value extracted from imx93_ccm.h.
+  plls:
+    type: array
+    required: false
+
+clock-cells:
+  - name

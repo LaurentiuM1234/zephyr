@@ -11,6 +11,18 @@ properties:
   interrupts:
     required: true
 
+  assigned-clocks:
+    type: array
+    required: false
+
+  assigned-clock-parents:
+    type: array
+    required: false
+
+  assigned-clock-rates:
+    type: array
+    required: false
+
   nxp,loopback:
     type: boolean
     description: |
