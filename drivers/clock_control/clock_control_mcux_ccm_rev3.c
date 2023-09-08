@@ -152,6 +152,28 @@ static int mcux_ccm_set_rate(const struct device *dev,
 	return imx_ccm_set_clock_rate(dev, clk_idx, clk_rate);
 }
 
+static int _mcux_ccm_set_rate(const struct device *dev,
+			      struct imx_ccm_clock *clk,
+			      uint32_t rate)
+{
+	uint32_t parent_rate;
+	int ret;
+
+	/* can't go any further in the clock tree */
+	if (!clk->parent) {
+		return imx_ccm_set_clock_rate(dev, clk, rate);
+	}
+
+	ret = imx_ccm_parent_get_rate(clk, clk->parent, &parent_rate);
+	if (ret == -EALREADY) {
+		/* parent already configured, no need to go any further */
+		return imx_ccm_set_clock_rate(dev, clk, rate);
+	} else if (ret < 0) {
+		return ret;
+	}
+
+	return _mcux_ccm_set_rate(dev, clk->parent, parent_rate);
+}
 
 static int mcux_ccm_init(const struct device *dev)
 {

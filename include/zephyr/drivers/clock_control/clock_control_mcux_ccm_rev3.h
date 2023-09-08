@@ -42,8 +42,8 @@ struct imx_ccm_clock {
 	uint32_t freq;
 	/** Clock state. */
 	enum imx_ccm_clock_state state;
-	/** True if clock allows gating operations */
-	bool allows_gating;
+	/** Clock's parent. */
+	struct imx_ccm_clock *parent;
 };
 
 /** @brief Clock operations.

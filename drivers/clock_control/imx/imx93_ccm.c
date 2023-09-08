@@ -30,31 +30,16 @@ struct imx93_ccm_pll_config {
 	struct imx93_ccm_pll_config *parent;
 };
 
-struct imx93_ccm_clock {
-	/* clock data */
-	struct imx_ccm_clock clk;
-	/* index of parent/child in roots/clocks array */
-	uint32_t relative_idx;
-};
-
 struct imx93_ccm_pll {
-	/* clock data */
 	struct imx_ccm_clock clk;
-	/* offset from the analog base */
-	uint32_t offset; /* offset from analog base */
-	/* PFD number - only applicable to LEVEL 1 PLLs */
+	uint32_t offset;
 	uint32_t pfd;
-	/* PLL's parent */
-	struct imx93_ccm_pll *parent;
-	/* number of predefined configurations */
 	uint32_t config_num;
-	/* currently selected configuration */
 	struct imx93_ccm_pll_config *set_config;
-	/* array of predefined configurations */
 	struct imx93_ccm_pll_config fracn_configs[IMX93_CCM_PLL_MAX_CFG];
 };
 
-/* because of dependencies between PLLs we need a 3-level scheme
+/* because of dependencies between PLLs we need a 3-level hierarchy
  * which will allow the clock configuration based on dependencies.
  *
  * the PLLs are organized as follows (taking SYSTEM_PLL1 as an example)
@@ -158,7 +143,7 @@ static struct imx93_ccm_pll pll_pfds[] = {
 	/* SYSTEM PLL1 PFD0 output */
 	{
 		.clk.id = kCLOCK_SysPll1Pfd0,
-		.parent = &pll_vcos[0],
+		.clk.parent = (struct imx_ccm_clock *)&pll_vcos[0],
 		.pfd = 0,
 		.offset = 0x1100,
 		.fracn_configs = {
@@ -174,7 +159,7 @@ static struct imx93_ccm_pll pll_pfds[] = {
 	/* SYSTEM PLL1 PFD1 output */
 	{
 		.clk.id = kCLOCK_SysPll1Pfd1,
-		.parent = &pll_vcos[0],
+		.clk.parent = (struct imx_ccm_clock *)&pll_vcos[0],
 		.pfd = 1,
 		.offset = 0x1100,
 		.fracn_configs = {
@@ -196,7 +181,7 @@ static struct imx93_ccm_pll pll_pfds_div2[] = {
 	/* SYSTEM_PLL1 PFD0 divided by 2 output */
 	{
 		.clk.id = kCLOCK_SysPll1Pfd0Div2,
-		.parent = &pll_pfds[0],
+		.clk.parent = (struct imx_ccm_clock *)&pll_pfds[0],
 		.offset = 0x1100,
 		.fracn_configs = {
 			{
@@ -209,7 +194,7 @@ static struct imx93_ccm_pll pll_pfds_div2[] = {
 	/* SYSTEM_PLL1 PFD1 divided by 2 output */
 	{
 		.clk.id = kCLOCK_SysPll1Pfd1Div2,
-		.parent = &pll_pfds[1],
+		.clk.parent = (struct imx_ccm_clock *)&pll_pfds[1],
 		.offset = 0x1100,
 		.fracn_configs = {
 			{
@@ -254,33 +239,30 @@ static struct imx_ccm_clock *root_mux[] = {
 	NULL, /* note: VIDEO_PLL currently not supported */
 };
 
-static struct imx93_ccm_clock roots[] = {
+static struct imx_ccm_clock roots[] = {
 	{
-		.clk.id = kCLOCK_Root_Lpuart1,
-		.relative_idx = 0,
+		.id = kCLOCK_Root_Lpuart1,
 	},
 	{
-		.clk.id = kCLOCK_Root_Lpuart2,
-		.relative_idx = 1,
+		.id = kCLOCK_Root_Lpuart2,
 	},
 	{
-		.clk.id = kCLOCK_Root_Lpuart8,
-		.relative_idx = 2,
+		.id = kCLOCK_Root_Lpuart8,
 	},
 };
 
-static struct imx93_ccm_clock clocks[] = {
+static struct imx_ccm_clock clocks[] = {
 	{
-		.clk.id = kCLOCK_Lpuart1,
-		.relative_idx = 0,
+		.id = kCLOCK_Lpuart1,
+		.parent = &roots[0],
 	},
 	{
-		.clk.id = kCLOCK_Lpuart2,
-		.relative_idx = 1,
+		.id = kCLOCK_Lpuart2,
+		.parent = &roots[1],
 	},
 	{
-		.clk.id = kCLOCK_Lpuart8,
-		.relative_idx = 2,
+		.id = kCLOCK_Lpuart8,
+		.parent = &roots[2],
 	},
 };
 
@@ -310,8 +292,7 @@ static int imx93_ccm_get_clock(uint32_t clk_id, struct imx_ccm_clock **clk)
 		}
 		*clk = &fixed[clk_idx];
 		break;
-	case IMX93_CCM_TYPE_INT_PLL:
-	case IMX93_CCM_TYPE_FRACN_PLL:
+	case IMX93_CCM_TYPE_PLL:
 		if (clk_idx >= ARRAY_SIZE(plls)) {
 			return -EINVAL;
 		}
@@ -322,6 +303,42 @@ static int imx93_ccm_get_clock(uint32_t clk_id, struct imx_ccm_clock **clk)
 	};
 
 	return 0;
+}
+
+static int imx93_ccm_type_from_clk_data(struct imx_ccm_clock *clk,
+					uint32_t *clk_type)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(clocks); i++) {
+		if (clk == &clocks[i]) {
+			*clk_type = IMX93_CCM_TYPE_IP;
+			return 0;
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(roots); i++) {
+		if (clk == &roots[i]) {
+			*clk_type = IMX93_CCM_TYPE_ROOT;
+			return 0;
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(fixed); i++) {
+		if (clk == &fixed[i]) {
+			*clk_type = IMX93_CCM_TYPE_FIXED;
+			return 0;
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(fixed); i++) {
+		if (clk == (struct imx_ccm_clock *)plls[i]) {
+			*clk_type = IMX93_CCM_TYPE_PLL;
+			return 0;
+		}
+	}
+
+	return -EINVAL;
 }
 
 static struct imx93_ccm_pll_config *get_pll_cfg(struct imx93_ccm_pll *pll,
@@ -341,9 +358,8 @@ static bool imx93_ccm_rate_is_valid(const struct device *dev,
 				    uint32_t clk_id, uint32_t rate)
 {
 	struct imx_ccm_data *data;
-	uint32_t clk_type, clk_idx, mux;
-	struct imx_ccm_clock *src, *clk;
-	struct imx93_ccm_clock *imx93_clk;
+	uint32_t clk_type, clk_idx;
+	struct imx_ccm_clock *clk;
 	int ret;
 
 	clk_idx = clk_id & ~IMX93_CCM_TYPE_MASK;
@@ -362,26 +378,18 @@ static bool imx93_ccm_rate_is_valid(const struct device *dev,
 
 	switch (clk_type) {
 	case IMX93_CCM_TYPE_IP:
-		imx93_clk = (struct imx93_ccm_clock *)clk;
-
-		if (imx93_clk->relative_idx >= ARRAY_SIZE(roots)) {
-			return -EINVAL;
-		}
-
-		clk = (struct imx_ccm_clock *)&roots[imx93_clk->relative_idx];
 	case IMX93_CCM_TYPE_ROOT:
-		mux = CLOCK_GetRootClockMux(clk->id);
-		src = root_mux[clk_idx * IMX93_CCM_SRC_NUM + mux];
-		if (!src) {
+		if (!clk->parent) {
 			return -EINVAL;
 		}
 
-		return rate <= src->freq;
+		clk = clk->parent;
+
+		return rate <= clk->freq;
 	case IMX93_CCM_TYPE_FIXED:
 		/* you're not allowed to set a fixed clock's frequency */
 		return false;
-	case IMX93_CCM_TYPE_INT_PLL:
-	case IMX93_CCM_TYPE_FRACN_PLL:
+	case IMX93_CCM_TYPE_PLL:
 		if (clk_idx >= ARRAY_SIZE(plls)) {
 			return false;
 		}
@@ -418,8 +426,7 @@ static int imx93_ccm_on_off(const struct device *dev, uint32_t clk_id, bool on)
 		}
 		break;
 	/* gating is not applicable to the following clocks */
-	case IMX93_CCM_TYPE_INT_PLL:
-	case IMX93_CCM_TYPE_FRACN_PLL:
+	case IMX93_CCM_TYPE_PLL:
 	case IMX93_CCM_TYPE_ROOT:
 	case IMX93_CCM_TYPE_FIXED:
 	default:
@@ -526,13 +533,13 @@ static int imx93_ccm_set_fracn_pll_rate(const struct device *dev,
 	}
 
 	/* we can't go any higher in the PLL hierarchy */
-	if (!pll->parent) {
+	if (!pll->clk.parent) {
 		/* we're currently on the last level */
 		return imx93_ccm_pll_configure_by_level(dev, pll, pll_level, cfg);
 	}
 
 	/* get PLL's parent */
-	pll_parent = pll->parent;
+	pll_parent = (struct imx93_ccm_pll *)pll->clk.parent;
 
 	/* get parent configuration */
 	cfg_parent = cfg->parent;
@@ -547,12 +554,24 @@ static int imx93_ccm_set_fracn_pll_rate(const struct device *dev,
 	return imx93_ccm_pll_configure_by_level(dev, pll, pll_level, cfg);
 }
 
+static struct imx_ccm_clock *get_root_child(struct imx_ccm_clock *root)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(clocks); i++) {
+		if (root == clocks[i].parent) {
+			return &clocks[i];
+		}
+	}
+
+	return NULL;
+}
+
 static int imx93_ccm_set_clock_rate(const struct device *dev, uint32_t clk_id, uint32_t rate)
 {
 	struct imx_ccm_data *data;
-	uint32_t clk_idx, clk_type, div, mux, crt_freq, obtained_freq;
+	uint32_t clk_idx, clk_type, div, crt_freq, obtained_freq, mux;
 	struct imx_ccm_clock *clk, *root;
-	struct imx93_ccm_clock *imx93_clk;
 	struct imx93_ccm_pll_config *pll_cfg;
 	int ret;
 
@@ -570,34 +589,25 @@ static int imx93_ccm_set_clock_rate(const struct device *dev, uint32_t clk_id, u
 
 	switch (clk_type) {
 	case IMX93_CCM_TYPE_IP:
-		imx93_clk = (struct imx93_ccm_clock *)clk;
-
-		if (imx93_clk->relative_idx >= ARRAY_SIZE(roots)) {
+		if (!clk->parent) {
 			return -EINVAL;
 		}
 
-		root = (struct imx_ccm_clock *)&roots[imx93_clk->relative_idx];
+		root = clk->parent;
 
 		/* is root clock configured? */
 		if (!root->freq) {
 			return -EINVAL;
 		}
 	case IMX93_CCM_TYPE_ROOT:
-		imx93_clk = (struct imx93_ccm_clock *)root;
-
-		if (imx93_clk->relative_idx == IMX93_CCM_INVAL_RELATIVE) {
-			/* this root doesn't have an IP clock child */
-			clk = NULL;
-		} else {
-			if (imx93_clk->relative_idx >= ARRAY_SIZE(clocks)) {
-				return -EINVAL;
-			}
-
-			clk = (struct imx_ccm_clock
-			       *)&clocks[imx93_clk->relative_idx];
+		if (!clk->parent) {
+			return -EINVAL;
 		}
+
+		clk = get_root_child(root);
+
 		mux = CLOCK_GetRootClockMux(root->id);
-		crt_freq = root_mux[clk_idx * IMX93_CCM_SRC_NUM + mux]->freq;
+		crt_freq = root->parent->freq;
 
 		div = crt_freq / rate;
 
@@ -609,27 +619,20 @@ static int imx93_ccm_set_clock_rate(const struct device *dev, uint32_t clk_id, u
 
 		CLOCK_SetRootClockDiv(root->id, div);
 
-		if (clk && clk != root) {
+		if (clk) {
 			clk->freq = obtained_freq;
 		}
-
 
 		root->freq = obtained_freq;
 
 		/* make sure we also enable the root clock */
-		/* TODO: do we need to turn off the root clock before
-		 * configuring it?
-		 */
 		CLOCK_PowerOnRootClock(root->id);
 
 		return obtained_freq;
 	case IMX93_CCM_TYPE_FIXED:
 		/* can't set a fixed clock's frequency */
 		return -EINVAL;
-	case IMX93_CCM_TYPE_INT_PLL:
-		/* TODO: this needs to be implemented */
-		return 0;
-	case IMX93_CCM_TYPE_FRACN_PLL:
+	case IMX93_CCM_TYPE_PLL:
 		pll_cfg = get_pll_cfg((struct imx93_ccm_pll *)clk, rate);
 		if (!pll_cfg) {
 			return -ENOTSUP;
@@ -658,15 +661,7 @@ static int imx93_ccm_assign_parent(const struct device *dev, uint32_t clk_id, ui
 	clk_type = clk_id & IMX93_CCM_TYPE_MASK;
 	data = dev->data;
 
-	/* fixed clocks don't allow this operation */
-	if (clk_type == IMX93_CCM_TYPE_FIXED) {
-		return -EINVAL;
-	}
-
-	/* IMX93_CCM_DUMMY_CLOCK can be assigned as any clock's parent
-	 * except for fixed clocks which shouldn't even be configured
-	 * in the first place.
-	 */
+	/* IMX93_CCM_DUMMY_CLOCK can be assigned as any clock's parent */
 	if (parent_id == IMX93_CCM_DUMMY_CLOCK) {
 		return 0;
 	}
@@ -686,20 +681,47 @@ static int imx93_ccm_assign_parent(const struct device *dev, uint32_t clk_id, ui
 		for (i = 0; i < IMX93_CCM_SRC_NUM; i++) {
 			if (root_mux[clk_idx * IMX93_CCM_SRC_NUM + i] == parent) {
 				CLOCK_SetRootClockMux(clk->id, i);
+				clk->parent = parent;
 				return 0;
 			}
 		}
 		return -EINVAL;
+	/* the following clocks don't allow parent assignment */
 	case IMX93_CCM_TYPE_IP:
-		/* note: although IP clocks do in fact have parents
-		 * you can't really modify them. As such, it would
-		 * be pointless to allow the assign_parent() operation
-		 * on an IP clock.
-		 */
-	case IMX93_CCM_TYPE_INT_PLL:
-	case IMX93_CCM_TYPE_FRACN_PLL:
-		/* PLLs don't have parents */
+	case IMX93_CCM_TYPE_PLL:
+	case IMX93_CCM_TYPE_FIXED:
 		return -EINVAL;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+
+static int imx93_ccm_parent_get_rate(struct imx_ccm_clock *clk,
+				     struct imx_ccm_clock *parent,
+				     uint32_t rate,
+				     uint32_t *parent_rate)
+{
+	struct imx93_ccm_clock *imx93_clk, *imx93_parent;
+	struct imx93_ccm_pll_config *cfg;
+	uint32_t clock_type;
+	int ret;
+
+	imx93_clk = (struct imx93_ccm_clock *)clk;
+	imx93_parent = (struct imx93_ccm_clock *)parent;
+
+	ret = imx93_ccm_type_from_clk_data(clk, &clock_type);
+	if (ret < 0) {
+		return ret;
+	}
+
+	switch (clock_type) {
+	case IMX93_CCM_TYPE_IP:
+		*parent_rate = parent->freq;
+	case IMX93_CCM_TYPE_ROOT:
+		return -EALREADY;
 	default:
 		return -EINVAL;
 	}
