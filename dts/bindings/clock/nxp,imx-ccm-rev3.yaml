@@ -17,7 +17,16 @@ properties:
       	clocks = <&ccm CLOCK_ID1>, <&ccm CLOCK_ID2>...
 
       where CLOCK_IDx is a value extracted from imx93_ccm.h.
-  plls:
+  clocks-assume-on:
+    type: array
+    required: false
+  assigned-clocks:
+    type: array
+    required: false
+  assigned-clock-parents:
+    type: array
+    required: false
+  assigned-clock-rates:
     type: array
     required: false
 

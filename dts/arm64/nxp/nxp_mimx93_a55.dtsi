@@ -87,8 +87,12 @@
 		reg = <0x44450000 DT_SIZE_K(64)>, // CCM base
 			<0x44480000 DT_SIZE_K(64)>; // PLL base
 
-		plls = <IMX93_CCM_SYS_PLL1_PFD0_DIV2 IMX_CCM_FLAG_ASSUME_ON 500000000>,
-			<IMX93_CCM_SYS_PLL1_PFD1_DIV2 IMX_CCM_FLAG_ASSUME_ON 400000000>;
+		clocks-assume-on = <IMX93_CCM_SYS_PLL1_PFD0_DIV2 500000000>,
+				<IMX93_CCM_SYS_PLL1_PFD1_DIV2 400000000>;
+
+		assigned-clocks = <IMX93_CCM_AUDIO_PLL>;
+		assigned-clock-parents = <IMX93_CCM_DUMMY_CLOCK>;
+		assigned-clock-rates = <393216000>;
 
 		#clock-cells = <1>;
 	};
@@ -99,9 +103,6 @@
 		interrupts = <GIC_SPI 19 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 		interrupt-names = "irq_0";
 		interrupt-parent = <&gic>;
-		assigned-clocks = <IMX93_CCM_LPUART1_ROOT>;
-		assigned-clock-parents = <IMX93_CCM_OSC_24M>;
-		assigned-clock-rates = <24000000>;
 		clocks = <&ccm IMX_CCM_LPUART_CLK 0x6c 24>;
 		status = "disabled";
 	};
@@ -112,9 +113,6 @@
 		interrupts = <GIC_SPI 20 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 		interrupt-names = "irq_0";
 		interrupt-parent = <&gic>;
-		assigned-clocks = <IMX93_CCM_LPUART2_ROOT>;
-		assigned-clock-parents = <IMX93_CCM_OSC_24M>;
-		assigned-clock-rates = <24000000>;
 		clocks = <&ccm IMX_CCM_LPUART_CLK 0x6c 24>;
 		status = "disabled";
 	};
