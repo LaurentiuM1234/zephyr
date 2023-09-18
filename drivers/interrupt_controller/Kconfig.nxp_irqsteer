@@ -1,0 +1,26 @@
+# Copyright 2023 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+config NXP_IRQSTEER
+	bool "IRQ_STEER interrupt controller for NXP chips"
+	default y
+	depends on DT_HAS_NXP_IRQSTEER_INTC_ENABLED
+	depends on MULTI_LEVEL_INTERRUPTS
+	depends on XTENSA
+	help
+		The IRQSTEER INTC provides support for MUX-ing
+		multiple interrupts from peripheral to one or
+		more CPU interrupt lines. This is used for CPUs
+		such as XTENSA DSPs.
+
+config NXP_IRQSTEER_ISR_THRESHOLD
+	int "Error threshold for a dispatcher's ISR"
+	default 5
+	depends on NXP_IRQSTEER
+	help
+		This config controls how many times a
+		dispatcher's ISR is allowed to iterate
+		over its assigned interrupt status register
+		before it can conclude that an interrupt
+		will get retriggered ad-infinitum (or at
+		least for an unacceptable number of times).
