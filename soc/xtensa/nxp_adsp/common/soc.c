@@ -20,6 +20,10 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(soc);
 
+
+/* temporary workaround the fact that not all i.MX8 SoCs use IRQ_STEER driver */
+#ifndef CONFIG_NXP_IRQSTEER
+
 void z_soc_irq_enable(uint32_t irq)
 {
 	/*
@@ -45,3 +49,5 @@ int z_soc_irq_is_enabled(unsigned int irq)
 
 	return ret;
 }
+
+#endif /* CONFIG_NXP_IRQSTEER */
