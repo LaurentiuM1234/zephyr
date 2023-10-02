@@ -1,0 +1,21 @@
+# Copyright 2023 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+config DMA_NXP_EDMA
+	bool "NXP enhanced Direct Memory Access (eDMA) driver"
+	default y
+	depends on DT_HAS_NXP_EDMA_ENABLED
+	help
+		Enable driver for NXP's eDMA IP.
+
+if DMA_NXP_EDMA
+
+config DMA_NXP_EDMA_HAS_CHAN_MUX
+	bool "Set if at least one eDMA instance is MUX-capable"
+	default n
+	help
+		Set this configuration if at least one EDMA
+		instance is MUX-capable (meaning at least one
+		channel can be used by multiple peripherals).
+
+endif # DMA_NXP_EDMA

@@ -1,0 +1,22 @@
+# Copyright 2023 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+description: NXP enhanced Direct Memory Access (eDMA) node
+
+compatible: "nxp,edma"
+
+include: [dma-controller.yaml, base.yaml]
+
+properties:
+  reg:
+    required: true
+  dma-channels:
+    required: false
+  valid-channels:
+    required: false
+    type: array
+  "#dma-cells":
+    const: 1
+  channel-mux:
+    type: boolean
+    required: false
