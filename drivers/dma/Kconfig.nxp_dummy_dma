@@ -1,0 +1,9 @@
+# Copyright 2023 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+config DMA_NXP_DUMMY_DMA
+	bool "Some helpful message should go here"
+	default y
+	depends on DT_HAS_NXP_DUMMY_DMA_ENABLED
+	help
+		Some helpful message should go here.

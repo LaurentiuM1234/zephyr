@@ -69,4 +69,6 @@ source "drivers/dma/Kconfig.andes_atcdmac300"
 
 source "drivers/dma/Kconfig.nxp_edma"
 
+source "drivers/dma/Kconfig.nxp_dummy_dma"
+
 endif # DMA
