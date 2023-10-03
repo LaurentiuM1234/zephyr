@@ -365,7 +365,7 @@ static int sai_tx_rx_disable(struct sai_data *data, enum dai_dir dir)
 		 * indicates if the transmitter/receiver was actually disabled
 		 * or not.
 		 */
-		if (SAI_TX_RX_IS_HW_DISABLED(dir, data->regmap)) {
+		if (SAI_TX_RX_IS_HW_ENABLED(dir, data->regmap)) {
 			LOG_ERR("dir %d not disabled", dir);
 			return -EAGAIN;
 		}

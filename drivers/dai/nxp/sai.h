@@ -15,7 +15,7 @@ LOG_MODULE_REGISTER(nxp_sai);
 /* format masks */
 #define SAI_FORMAT_CLOCK_PROVIDER_MASK 0xf000
 #define SAI_FORMAT_PROTOCOL_MASK 0x000f
-#define SAI_FORMAT_PROTOCOL_MASK 0x000f
+#define SAI_FORMAT_INVERSION_MASK 0x0f00
 
 #ifdef CONFIG_SAI_HAS_MCLK_CONFIG_OPTION
 #define SAI_MCLK_MCR_MSEL_SHIFT 24
@@ -367,7 +367,7 @@ static inline uint32_t sai_get_state(enum dai_dir dir,
 {
 	if (dir == DAI_DIR_RX) {
 		return data->rx_state;
-	else {
+	} else {
 		return data->tx_state;
 	}
 }
