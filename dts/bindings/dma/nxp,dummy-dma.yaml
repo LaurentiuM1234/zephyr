@@ -1,0 +1,13 @@
+# Copyright 2023 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+description: NXP dummy DMA node.
+
+compatible: "nxp,dummy-dma"
+
+include: base.yaml
+
+properties:
+  dma-channels:
+    required: true
+    type: int
