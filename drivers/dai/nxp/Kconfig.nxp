@@ -1,0 +1,30 @@
+# Copyright 2023 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+config DAI_NXP_SAI
+	bool "NXP Synchronous Audio Interface (SAI) driver"
+	default y
+	depends on DT_HAS_NXP_SAI_ENABLED
+	help
+		Select this to enable NXP SAI driver.
+
+if DAI_NXP_SAI
+
+config SAI_HAS_MCLK_CONFIG_OPTION
+	bool "Enable if SAI has MCLK configuration options"
+	default n
+	help
+		Select this if the SAI IP allows configuration
+		of the master clock. Master clock configuration
+		refers to enabling/disabling the master clock,
+		setting the signal as input or output or dividing
+		the master clock output.
+
+config SAI_HAS_XCR4_CHMOD
+	bool "Enable if SAI has the CHMOD field in XCR4"
+	default n
+	help
+		Select this if the SAI IP has the CHMOD
+		field in the XCR4 registers.
+
+endif # DAI_NXP_SAI
