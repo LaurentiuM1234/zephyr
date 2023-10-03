@@ -52,6 +52,14 @@ static const clock_root_t lpuart_clk_root[] = {
 };
 #endif
 
+#if defined(CONFIG_SOC_MIMX93_A55) && defined(CONFIG_DAI_NXP_SAI)
+static const clock_root_t sai_roots[] = {
+	kCLOCK_Root_Sai1,
+	kCLOCK_Root_Sai2,
+	kCLOCK_Root_Sai3,
+};
+#endif
+
 static int mcux_ccm_on(const struct device *dev,
 			      clock_control_subsys_t sub_system)
 {
@@ -99,9 +107,27 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 				    uint32_t *rate)
 {
 	uint32_t clock_name = (uintptr_t)sub_system;
+#ifdef CONFIG_SOC_MIMX93_A55
+	uint32_t instance = clock_name & IMX_CCM_INSTANCE_MASK;
+#endif /* CONFIG_SOC_MIMX93_A55 */
 
 	switch (clock_name) {
+#if defined(CONFIG_SOC_MIMX93_A55) && defined(CONFIG_DAI_NXP_SAI)
+	case IMX_CCM_SAI1_CLK:
+	case IMX_CCM_SAI2_CLK:
+	case IMX_CCM_SAI3_CLK:
+		uint32_t mux = CLOCK_GetRootClockMux(sai_roots[instance]);
+		uint32_t div = CLOCK_GetRootClockDiv(sai_roots[instance]);
 
+		/* assumption: SAI3's SRC is AUDIO_PLL */
+		if (mux != 1) {
+			return -EINVAL;
+		}
+
+		*rate = 393216000 / div;
+
+		break;
+#endif
 #ifdef CONFIG_I2C_MCUX_LPI2C
 	case IMX_CCM_LPI2C_CLK:
 		if (CLOCK_GetMux(kCLOCK_Lpi2cMux) == 0) {
@@ -138,7 +164,6 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 	case IMX_CCM_LPUART7_CLK:
 	case IMX_CCM_LPUART8_CLK:
 	{
-		uint32_t instance = clock_name & IMX_CCM_INSTANCE_MASK;
 		clock_root_t clk_root = lpuart_clk_root[instance];
 		uint32_t uart_mux = CLOCK_GetRootClockMux(clk_root);
 		uint32_t divider = CLOCK_GetRootClockDiv(clk_root);
