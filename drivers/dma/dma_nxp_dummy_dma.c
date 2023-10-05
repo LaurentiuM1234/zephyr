@@ -79,6 +79,8 @@ static bool dummy_dma_channel_filter(const struct device *dev,
 {
 	enum dma_channel_filter filter = POINTER_TO_UINT(filter_data);
 
+	LOG_ERR("called channel filter");
+
 	/* TODO: should we also validate the channel ID here? */
 	if (filter == DMA_CHANNEL_NORMAL) {
 		return true;

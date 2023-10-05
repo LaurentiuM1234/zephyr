@@ -347,6 +347,8 @@ static int edma_resume(const struct device *dev, uint32_t chan_id)
 
 static bool edma_chan_filter(const struct device *dev, int chan_id, void *filter_data)
 {
+	LOG_ERR("called channel filter");
+
 	enum dma_channel_filter filter = POINTER_TO_UINT(filter_data);
 
 	/* note: only perform channel type validation here. It's mandatory
@@ -354,10 +356,17 @@ static bool edma_chan_filter(const struct device *dev, int chan_id, void *filter
 	 * might as well validate the channel ID there.
 	 */
 	if (filter == DMA_CHANNEL_NORMAL) {
+		LOG_ERR("here!");
 		return true;
 	}
 
 	return false;
+}
+
+static int edma_get_attribute(const struct device *dev, uint32_t type, uint32_t *val)
+{
+	/* TODO: implement me */
+	return 0;
 }
 
 static const struct dma_driver_api edma_api = {
@@ -369,6 +378,7 @@ static const struct dma_driver_api edma_api = {
 	.resume = edma_resume,
 	.get_status = edma_get_status,
 	.chan_filter = edma_chan_filter,
+	.get_attribute = edma_get_attribute,
 };
 
 static int edma_init(const struct device *dev)
