@@ -127,6 +127,8 @@ LOG_MODULE_REGISTER(nxp_sai);
 #define SAI_RX_DMA_MUX(inst)\
 	FSL_FEATURE_SAI_RX_DMA_MUXn(UINT_TO_I2S(DT_INST_REG_ADDR(inst)))
 
+/* used to retrieve the DAI index */
+
 /* utility macros */
 
 /* invert a clock's polarity. This works because a clock's polarity is expressed
@@ -215,6 +217,7 @@ struct sai_config {
 	uint32_t tx_fifo_watermark;
 	const struct dai_properties *tx_props;
 	const struct dai_properties *rx_props;
+	uint32_t dai_index;
 };
 
 /* this needs to perfectly match SOF's struct sof_ipc_dai_sai_params */

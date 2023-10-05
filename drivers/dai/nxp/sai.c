@@ -309,12 +309,6 @@ static int sai_config_set(const struct device *dev,
 		return ret;
 	}
 
-	/* latch onto the passed configuration */
-	memcpy(&data->cfg, cfg, sizeof(*cfg));
-
-	/* a variable number of channels should be allowed */
-	data->cfg.channels = 0;
-
 	sai_dump_register_data(data->regmap);
 
 	return 0;
@@ -570,11 +564,25 @@ static int sai_trigger(const struct device *dev,
 	CODE_UNREACHABLE;
 }
 
+static int sai_probe(const struct device *dev)
+{
+	/* nothing to be done here but sadly mandatory to implement */
+	return 0;
+}
+
+static int sai_remove(const struct device *dev)
+{
+	/* nothing to be done here but sadly mandatory to implement */
+	return 0;
+}
+
 static const struct dai_driver_api sai_api = {
 	.config_set = sai_config_set,
 	.config_get = sai_config_get,
 	.trigger = sai_trigger,
 	.get_properties = sai_get_properties,
+	.probe = sai_probe,
+	.remove = sai_remove,
 };
 
 static int sai_init(const struct device *dev)
@@ -631,7 +639,10 @@ static struct sai_config sai_config_##inst = {					\
 	.rx_props = &sai_rx_props_##inst,					\
 };										\
 										\
-static struct sai_data sai_data_##inst;						\
+static struct sai_data sai_data_##inst = {					\
+	.cfg.type = DAI_IMX_SAI,						\
+	.cfg.channels = 0,							\
+};										\
 										\
 DEVICE_DT_INST_DEFINE(inst, &sai_init, NULL,					\
 		      &sai_data_##inst, &sai_config_##inst,			\
