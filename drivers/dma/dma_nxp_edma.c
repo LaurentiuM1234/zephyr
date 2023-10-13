@@ -27,7 +27,7 @@ static void edma_isr(const void *parameter)
 	}
 
 	/* clear interrupt */
-	base->CH[chan->id].CH_INT |= DMA_CH_INT_INT_MASK;
+	base->CH[chan->id].CH_INT = DMA_CH_INT_INT_MASK;
 
 	/* TODO: are there any sanity checks we have to perform before invoking
 	 * the registered callback?
@@ -105,6 +105,22 @@ static int edma_config(const struct device *dev, uint32_t chan_id,
 		return -EINVAL;
 	}
 
+	/* source data size (SSIZE) shouldn't exceed the maximum alignment */
+	if (dma_config->source_data_size > CONFIG_DMA_NXP_EDMA_MAX_ALIGN) {
+		LOG_ERR("source data size %d exceeds maximum alignment %d",
+			dma_config->source_data_size,
+			CONFIG_DMA_NXP_EDMA_MAX_ALIGN);
+		return -EINVAL;
+	}
+
+	/* destination data size (DSIZE) shouldn't exceed the maximum alignment */
+	if (dma_config->dest_data_size > CONFIG_DMA_NXP_EDMA_MAX_ALIGN) {
+		LOG_ERR("destination data size %d exceeds maximum alignment %d",
+			dma_config->dest_data_size,
+			CONFIG_DMA_NXP_EDMA_MAX_ALIGN);
+		return -EINVAL;
+	}
+
 	/* Scatter-Gather configurations currently not supported */
 	if (dma_config->block_count != 1) {
 		LOG_ERR("number of blocks %d not supported", dma_config->block_count);
@@ -147,7 +163,7 @@ static int edma_config(const struct device *dev, uint32_t chan_id,
 		return -EINVAL;
 	}
 
-	/* check if total number of bytes is a multiple of MAX(SSIZE, DSIZE).
+	/* check if NBYTES is a multiple of MAX(SSIZE, DSIZE).
 	 * This condition stems from the following pieces of information:
 	 *	1) SOFF and DOFF are set to SSIZE and DSIZE.
 	 *	2) After each minor iteration, SOFF and DOFF are added to
@@ -195,17 +211,6 @@ static int edma_config(const struct device *dev, uint32_t chan_id,
 		return ret;
 	}
 
-#ifdef CONFIG_DMA_NXP_EDMA_HAS_CHAN_MUX
-	/* although the EDMA_HAS_CHAN_MUX feature is enabled, not all eDMA
-	 * instances may have channel MUX-ing. As such, we also need to check
-	 * for the presence of the channel-mux attribute to decide if we need
-	 * to set the MUX value or not.
-	 */
-	if (cfg->channel_mux) {
-		EDMA_SetChannelMux(UINT_TO_DMA(data->regmap),
-				   chan_id, dma_config->dma_slot);
-	}
-#endif /* CONFIG_DMA_NXP_EDMA_HAS_CHAN_MUX */
 
 	ret = get_transfer_type(dma_config->channel_direction, &transfer_type);
 	if (ret < 0) {
@@ -229,17 +234,34 @@ static int edma_config(const struct device *dev, uint32_t chan_id,
 	EDMA_SetTransferConfig(UINT_TO_DMA(data->regmap), chan_id,
 			       &chan->transfer_cfg, NULL);
 
+#ifdef CONFIG_DMA_NXP_EDMA_HAS_CHAN_MUX
+	/* although the EDMA_HAS_CHAN_MUX feature is enabled, not all eDMA
+	 * instances may have channel MUX-ing. As such, we also need to check
+	 * for the presence of the channel-mux attribute to decide if we need
+	 * to set the MUX value or not.
+	 */
+	if (cfg->channel_mux) {
+		EDMA_SetChannelMux(UINT_TO_DMA(data->regmap),
+				   chan_id, dma_config->dma_slot);
+	}
+#endif /* CONFIG_DMA_NXP_EDMA_HAS_CHAN_MUX */
+
 	/* set SLAST and DLAST */
 	ret = set_slast_dlast(dma_config, transfer_type, data, chan_id);
 	if (ret < 0) {
 		return ret;
 	}
 
-	/* allow interrupting the CPU when half of a major cycle is completed
-	 * and when a major cycle is completed.
+	/* allow interrupting the CPU when a major/half a major cycle is completed.
+	 *
+	 * interesting note: only 1 major loop is performed per slave peripheral
+	 * DMA request. For instance, if block_size = 768 and burst_size = 192
+	 * we're going to get 4 transfers of 192 bytes. Each of these transfers
+	 * translates to a DMA request made by the slave peripheral.
 	 */
 	(UINT_TO_DMA(data->regmap))->CH[chan->id].TCD_CSR =
-		DMA_TCD_CSR_INTMAJOR_MASK | DMA_TCD_CSR_INTHALF_MASK;
+		DMA_TCD_CSR_INTMAJOR_MASK | DMA_TCD_CSR_INTHALF_MASK |
+		DMA_CSR_DREQ_MASK;
 
 	/* enable channel interrupt */
 	irq_enable(chan->irq);
@@ -250,14 +272,24 @@ static int edma_config(const struct device *dev, uint32_t chan_id,
 	return 0;
 }
 
-/* WARNING: this function is bad and should be only used with SOF */
-/* TODO: should we base the query on the transfer type? */
+/* TODO: this function is bad and only works for SOF. Add support for
+ * better querying the transfer status. The main problem is that
+ * the DMA doesn't really support configurations in which you have
+ * a cyclic buffer that you write data into after x ms so computing
+ * free and pending_length based on just CITER and BITER will
+ * end up returning incorrect results. Ideally, one should find a
+ * way to solve this issue at the application level.
+ */
 static int edma_get_status(const struct device *dev, uint32_t chan_id,
 			   struct dma_status *stat)
 {
 	struct edma_data *data;
 	struct edma_channel *chan;
 	DMA_Type *base;
+	uint32_t citer, biter, burst_size;
+	static int times = 5;
+	static uint64_t prev = 0;
+	static uint64_t time = 0;
 
 	data = dev->data;
 	base = UINT_TO_DMA(data->regmap);
@@ -275,7 +307,7 @@ static int edma_get_status(const struct device *dev, uint32_t chan_id,
 	return 0;
 }
 
-static int edma_stop(const struct device *dev, uint32_t chan_id)
+static int edma_suspend(const struct device *dev, uint32_t chan_id)
 {
 	struct edma_data *data;
 	const struct edma_config *cfg;
@@ -292,7 +324,47 @@ static int edma_stop(const struct device *dev, uint32_t chan_id)
 		return -EINVAL;
 	}
 
-	/* change channel's state to STARTED */
+	edma_dump_channel_registers(data, chan_id);
+
+	/* change channel's state to SUSPENDED */
+	ret = channel_change_state(chan, CHAN_STATE_SUSPENDED);
+	if (ret < 0) {
+		LOG_ERR("failed to change channel %d state to SUSPENDED", chan_id);
+		return ret;
+	}
+
+	LOG_DBG("suspending channel %u", chan_id);
+
+	/* disable HW requests */
+	(UINT_TO_DMA(data->regmap))->CH[chan->id].CH_CSR &= ~DMA_CH_CSR_ERQ_MASK;
+
+	return 0;
+}
+
+static int edma_stop(const struct device *dev, uint32_t chan_id)
+{
+	struct edma_data *data;
+	const struct edma_config *cfg;
+	struct edma_channel *chan;
+	enum channel_state prev_state;
+	int ret;
+	uint32_t tries;
+
+	data = dev->data;
+	cfg = dev->config;
+
+	/* fetch channel data */
+	chan = lookup_channel(dev, chan_id);
+	if (!chan) {
+		LOG_ERR("channel ID %u is not valid", chan_id);
+		return -EINVAL;
+	}
+
+	prev_state = chan->state;
+
+	edma_dump_channel_registers(data, chan_id);
+
+	/* change channel's state to STOPPED */
 	ret = channel_change_state(chan, CHAN_STATE_STOPPED);
 	if (ret < 0) {
 		LOG_ERR("failed to change channel %d state to STOPPED", chan_id);
@@ -301,8 +373,32 @@ static int edma_stop(const struct device *dev, uint32_t chan_id)
 
 	LOG_DBG("stopping channel %u", chan_id);
 
-	/* disable hardware requests */
+	if (prev_state == CHAN_STATE_SUSPENDED) {
+		/* if the channel has been suspended then there's
+		 * no point in disabling the HW requests again. Just
+		 * jump to the channel release operation.
+		 */
+		goto out_release_channel;
+	}
+
+	/* disable HW requests */
 	(UINT_TO_DMA(data->regmap))->CH[chan->id].CH_CSR &= ~DMA_CH_CSR_ERQ_MASK;
+
+out_release_channel:
+
+#ifdef CONFIG_DMA_NXP_EDMA_HAS_CHAN_MUX
+	/* clear the channel MUX so that it can used by a different peripheral.
+	 *
+	 * note: because the channel is released during dma_stop() that means
+	 * dma_start() can no longer be immediatelly called. This is because
+	 * one needs to re-configure the channel MUX which can only be done
+	 * through dma_config(). As such, if one intends to reuse the current
+	 * configuration then please call dma_suspend() instead of dma_stop().
+	 */
+	if (cfg->channel_mux) {
+		EDMA_SetChannelMux(UINT_TO_DMA(data->regmap), chan_id, 0x0);
+	}
+#endif /* CONFIG_DMA_NXP_EDMA_HAS_CHAN_MUX */
 
 	return 0;
 }
@@ -333,8 +429,8 @@ static int edma_start(const struct device *dev, uint32_t chan_id)
 
 	LOG_DBG("starting channel %u", chan_id);
 
-	/* enable hardware requests */
-	(UINT_TO_DMA(data->regmap))->CH[chan->id].CH_CSR = DMA_CH_CSR_ERQ_MASK;
+	/* enable HW requests */
+	(UINT_TO_DMA(data->regmap))->CH[chan->id].CH_CSR |= DMA_CH_CSR_ERQ_MASK;
 
 	return 0;
 }
@@ -345,39 +441,96 @@ static int edma_resume(const struct device *dev, uint32_t chan_id)
 	return 0;
 }
 
-static bool edma_chan_filter(const struct device *dev, int chan_id, void *filter_data)
+static int edma_reload(const struct device *dev, uint32_t chan_id, uint32_t src,
+		       uint32_t dst, size_t size)
 {
-	LOG_ERR("called channel filter");
+	struct edma_data *data;
+	const struct edma_config *cfg;
+	struct edma_channel *chan;
+	DMA_Type *base;
+	int ret;
 
-	enum dma_channel_filter filter = POINTER_TO_UINT(filter_data);
+	data = dev->data;
+	cfg = dev->config;
+	base = UINT_TO_DMA(data->regmap);
 
-	/* note: only perform channel type validation here. It's mandatory
-	 * to perform a channel data lookup during the other operations so
-	 * might as well validate the channel ID there.
-	 */
-	if (filter == DMA_CHANNEL_NORMAL) {
-		LOG_ERR("here!");
-		return true;
+	/* fetch channel data */
+	chan = lookup_channel(dev, chan_id);
+	if (!chan) {
+		LOG_ERR("channel ID %u is not valid", chan_id);
+		return -EINVAL;
 	}
 
-	return false;
+	if (chan->state != CHAN_STATE_STARTED) {
+		LOG_ERR("reload is only supported on started channels");
+		return -EINVAL;
+	}
+
+	/* check if there's a pending transfer
+	 *
+	 * note: this function shall not return an error
+	 * if called mid transfer as this case may be pretty
+	 * common (e.g: SOF sometimes calls it after the completion
+	 * of half a major cycle). As such, please use with caution
+	 * as it may not always have the desired effect.
+	 *
+	 * TODO: should it return an error and handle it at application level?
+	 */
+	if (!(base->CH[chan->id].CH_CSR & DMA_CH_CSR_DONE_MASK)) {
+		LOG_WRN("transfer is on-going, ignoring reload");
+		return 0;
+	}
+
+	/* allow slave peripheral to drive the next transfer */
+	(UINT_TO_DMA(data->regmap))->CH[chan->id].CH_CSR |= DMA_CH_CSR_ERQ_MASK;
+
+	return 0;
 }
 
 static int edma_get_attribute(const struct device *dev, uint32_t type, uint32_t *val)
 {
-	/* TODO: implement me */
+	/* VERY IMPORTANT: the buffer address and size alignments
+	 * need to be chosen such that they will not restrict the
+	 * EDMA's capabilities. For instance, having an alignment
+	 * of 32 bits will restrict the EDMA parameters to <= 32
+	 * (meaning you wouldn't be able to perfrom transfers with
+	 * (SSIZE/DSIZE = 64)
+	 *
+	 * (TODO: requires validation) Not restricting SSIZE and
+	 * DSIZE to <= CONFIG_DMA_NXP_EDMA_MAX_ALIGN may lead
+	 * to configuration errors. (of course, the same rationale
+	 * applies to SLAST and DLAST and SOFF and DOFF but the
+	 * last 2 are set to SSIZE and DSIZE anyways so it doesn't
+	 * matter)
+	 */
+	switch (type) {
+	case DMA_ATTR_BUFFER_SIZE_ALIGNMENT:
+		/* this value is in bytes, hence the division */
+		*val = CONFIG_DMA_NXP_EDMA_MAX_ALIGN / 8;
+		break;
+	case DMA_ATTR_BUFFER_ADDRESS_ALIGNMENT:
+		*val = CONFIG_DMA_NXP_EDMA_MAX_ALIGN;
+		break;
+	case DMA_ATTR_MAX_BLOCK_COUNT:
+		/* this is restricted to 1 because SG configurations are not supported */
+		*val = 1;
+		break;
+	default:
+		LOG_ERR("invalid attribute type: %d", type);
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
 static const struct dma_driver_api edma_api = {
-	.reload = NULL, /* TODO: should this be implemented? */
+	.reload = edma_reload,
 	.config = edma_config,
 	.start = edma_start,
 	.stop = edma_stop,
-	.suspend = edma_stop,
+	.suspend = edma_suspend,
 	.resume = edma_resume,
 	.get_status = edma_get_status,
-	.chan_filter = edma_chan_filter,
 	.get_attribute = edma_get_attribute,
 };
 
@@ -397,6 +550,9 @@ static int edma_init(const struct device *dev)
 	get_default_edma_config(&edma_config);
 
 	EDMA_Init(UINT_TO_DMA(data->regmap), (const edma_config_t *)&edma_config);
+
+	data->channel_flags = ATOMIC_INIT(data->ctx.dma_channels);
+	data->ctx.atomic = &data->channel_flags;
 
 	return 0;
 }

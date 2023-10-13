@@ -55,6 +55,7 @@ LOG_MODULE_REGISTER(nxp_edma);
 {									\
 	.id = DT_INST_PROP_BY_IDX(inst, valid_channels, idx),		\
 	.dev = DEVICE_DT_GET(DT_INST(inst, nxp_edma)),			\
+	.irq = DT_INST_IRQ_BY_IDX(inst, idx, irq),			\
 }
 
 /* used to declare a struct edma_channel by the explicit macro suite */
@@ -62,6 +63,7 @@ LOG_MODULE_REGISTER(nxp_edma);
 {									\
 	.id = idx,							\
 	.dev = DEVICE_DT_GET(DT_INST(inst, nxp_edma)),			\
+	.irq = DT_INST_IRQ_BY_IDX(inst, idx, irq),			\
 }
 
 /* used to create an array of channel IDs via the valid-channels property */
@@ -98,6 +100,7 @@ enum channel_state {
 	CHAN_STATE_CONFIGURED,
 	CHAN_STATE_STARTED,
 	CHAN_STATE_STOPPED,
+	CHAN_STATE_SUSPENDED,
 };
 
 struct edma_channel {
@@ -115,6 +118,7 @@ struct edma_data {
 	struct dma_context ctx;
 	mm_reg_t regmap;
 	struct edma_channel *channels;
+	atomic_t channel_flags;
 };
 
 struct edma_config {
@@ -146,13 +150,19 @@ static inline int channel_change_state(struct edma_channel *chan,
 		}
 		break;
 	case CHAN_STATE_STARTED:
-		if (next != CHAN_STATE_STOPPED) {
+		if (next != CHAN_STATE_STOPPED &&
+		    next != CHAN_STATE_SUSPENDED) {
 			return -EPERM;
 		}
 		break;
 	case CHAN_STATE_STOPPED:
+		if (next != CHAN_STATE_CONFIGURED) {
+			return -EPERM;
+		}
+		break;
+	case CHAN_STATE_SUSPENDED:
 		if (next != CHAN_STATE_STARTED &&
-		    next != CHAN_STATE_CONFIGURED) {
+		    next != CHAN_STATE_STOPPED) {
 			return -EPERM;
 		}
 		break;
@@ -223,6 +233,7 @@ static inline void edma_dump_channel_registers(struct edma_data *data,
 	LOG_DBG("CH_INT: 0x%x", base->CH[chan_id].CH_INT);
 	LOG_DBG("CH_SBR: 0x%x", base->CH[chan_id].CH_SBR);
 	LOG_DBG("CH_PRI: 0x%x", base->CH[chan_id].CH_PRI);
+	LOG_DBG("CH_MUX: 0x%x", base->CH[chan_id].CH_MUX);
 
 	LOG_DBG("TCD_SADDR: 0x%x", base->CH[chan_id].TCD_SADDR);
 	LOG_DBG("TCD_SOFF: 0x%x", base->CH[chan_id].TCD_SOFF);

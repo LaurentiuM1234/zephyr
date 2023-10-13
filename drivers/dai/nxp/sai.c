@@ -162,13 +162,22 @@ static int sai_config_set(const struct device *dev,
 	get_serial_default_config(&tx_config->serialData);
 	get_fifo_default_config(&tx_config->fifo);
 
-	/* TODO: for now we only support 1 SAI data channel */
-	/* note: this may be obvious but enabling multiple SAI
+	/* note1: this may be obvious but enabling multiple SAI
 	 * channels (or data lines) may lead to FIFO starvation/
 	 * overflow if data is not written/read from the respective
 	 * TDR/RDR registers.
+	 *
+	 * note2: the SAI data line should be enabled based on
+	 * the direction (TX/RX) we're enabling. Enabling the
+	 * data line for the opposite direction will lead to FIFO
+	 * overrun/underrun when working with a SYNC direction.
+	 *
+	 * note3: the TX/RX data line shall be enabled/disabled
+	 * via the sai_trigger_() suite to avoid scenarios in
+	 * which one configures both direction but only starts
+	 * the SYNC direction which would lead to a FIFO underrun.
 	 */
-	tx_config->channelMask = 0x1;
+	tx_config->channelMask = 0x0;
 
 	/* TODO: for now, only MCLK1 is supported */
 	tx_config->bitClock.bclkSource = kSAI_BclkSourceMclkOption1;
@@ -256,11 +265,13 @@ static int sai_config_set(const struct device *dev,
 	tx_config->serialData.dataMaskedWord = ~bespoke->tx_slots;
 	rx_config->serialData.dataMaskedWord = ~bespoke->rx_slots;
 
-	tx_config->fifo.fifoWatermark = sai_cfg->tx_fifo_watermark;
-	rx_config->fifo.fifoWatermark = sai_cfg->rx_fifo_watermark;
+	/* TODO: validate if watermark's value is in [0, 127] */
 
-	LOG_DBG("RX watermark: %d", tx_config->fifo.fifoWatermark);
-	LOG_DBG("TX watermark: %d", rx_config->fifo.fifoWatermark);
+	tx_config->fifo.fifoWatermark = sai_cfg->tx_fifo_watermark - 1;
+	rx_config->fifo.fifoWatermark = sai_cfg->rx_fifo_watermark - 1;
+
+	LOG_DBG("RX watermark: %d", sai_cfg->rx_fifo_watermark);
+	LOG_DBG("TX watermark: %d", sai_cfg->tx_fifo_watermark);
 
 	/* TODO: for now, the only supported operation mode is RX sync with TX.
 	 * Is there a need to support other modes?
@@ -308,6 +319,9 @@ static int sai_config_set(const struct device *dev,
 		LOG_ERR("failed to update RX state. Reason: %d", ret);
 		return ret;
 	}
+
+	/* TODO: should we leave this here? */
+	data->cfg.rate = bespoke->fsync_rate;
 
 	sai_dump_register_data(data->regmap);
 
@@ -432,6 +446,8 @@ static int sai_trigger_stop(const struct device *dev,
 		return -EINVAL;
 	}
 
+	sai_dump_register_data(data->regmap);
+
 	/* attempt to change state */
 	ret = sai_update_state(dir, data, DAI_STATE_STOPPING);
 	if (ret < 0) {
@@ -444,9 +460,10 @@ static int sai_trigger_stop(const struct device *dev,
 
 	if (old_state == DAI_STATE_PAUSED) {
 		/* if SAI was previously paused then all that's
-		 * left to do is disable the DMA requests.
+		 * left to do is disable the DMA requests and
+		 * the data line.
 		 */
-		goto out_dma_disable;
+		goto out_dline_disable;
 	}
 
 	ret = sai_tx_rx_disable(data, dir);
@@ -457,7 +474,10 @@ static int sai_trigger_stop(const struct device *dev,
 	/* update the software state of TX/RX */
 	sai_tx_rx_sw_enable_disable(dir, data, false);
 
-out_dma_disable:
+out_dline_disable:
+	/* disable TX/RX data line */
+	sai_tx_rx_set_dline_mask(dir, data->regmap, 0x0);
+
 	/* disable DMA requests */
 	SAI_TX_RX_DMA_ENABLE_DISABLE(dir, data->regmap, false);
 
@@ -523,6 +543,13 @@ static int sai_trigger_start(const struct device *dev,
 	/* TODO: for now, only DMA mode is supported */
 	SAI_TX_RX_DMA_ENABLE_DISABLE(dir, data->regmap, true);
 
+	/* enable TX/RX data line. This translates to TX_DLINE0/RX_DLINE0
+	 * being enabled.
+	 *
+	 * TODO: for now we only support 1 data line per direction.
+	 */
+	sai_tx_rx_set_dline_mask(dir, data->regmap, 0x1);
+
 out_enable_tx_rx:
 	/* this will also enable the async side */
 	SAI_TX_RX_ENABLE_DISABLE(dir, data->regmap, true);
@@ -539,11 +566,11 @@ static int sai_trigger(const struct device *dev,
 {
 	switch (cmd) {
 	case DAI_TRIGGER_START:
-		return sai_trigger_start(dev, cmd);
+		return sai_trigger_start(dev, dir);
 	case DAI_TRIGGER_PAUSE:
-		return sai_trigger_pause(dev, cmd);
+		return sai_trigger_pause(dev, dir);
 	case DAI_TRIGGER_STOP:
-		return sai_trigger_stop(dev, cmd);
+		return sai_trigger_stop(dev, dir);
 	case DAI_TRIGGER_PRE_START:
 	case DAI_TRIGGER_POST_STOP:
 	case DAI_TRIGGER_DRAIN:
@@ -618,13 +645,13 @@ static int sai_init(const struct device *dev)
 										\
 static const struct dai_properties sai_tx_props_##inst = {			\
 	.fifo_address = SAI_TX_FIFO_BASE(inst),					\
-	.fifo_depth = SAI_FIFO_DEPTH(inst),					\
+	.fifo_depth = 192,							\
 	.dma_hs_id = SAI_TX_DMA_MUX(inst),					\
 };										\
 										\
 static const struct dai_properties sai_rx_props_##inst = {			\
 	.fifo_address = SAI_RX_FIFO_BASE(inst),					\
-	.fifo_address = SAI_RX_FIFO_BASE(inst),					\
+	.fifo_depth = 192,							\
 	.dma_hs_id = SAI_RX_DMA_MUX(inst),					\
 };										\
 										\

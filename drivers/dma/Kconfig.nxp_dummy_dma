@@ -7,3 +7,13 @@ config DMA_NXP_DUMMY_DMA
 	depends on DT_HAS_NXP_DUMMY_DMA_ENABLED
 	help
 		Some helpful message should go here.
+
+if DMA_NXP_DUMMY_DMA
+
+config DMA_NXP_DUMMY_DMA_MAX_ALIGN
+	int "Some helpful message should go here"
+	default 64
+	help
+		Some helpful message should go here.
+
+endif # DMA_NXP_DUMMY_DMA

@@ -18,4 +18,16 @@ config DMA_NXP_EDMA_HAS_CHAN_MUX
 		instance is MUX-capable (meaning at least one
 		channel can be used by multiple peripherals).
 
+config DMA_NXP_EDMA_MAX_ALIGN
+	int "Some helpful message should go here"
+	default 64
+	help
+		Some helpful message should go here.
+
+config DMA_NXP_EDMA_MAX_STOP_TRIES
+	int "Some helpful message should go here"
+	default 1
+	help
+		Some helpful message should go here.
+
 endif # DMA_NXP_EDMA

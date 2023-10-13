@@ -109,11 +109,11 @@ LOG_MODULE_REGISTER(nxp_sai);
 
 /* used to retrieve TFR0's address based on SAI's physical address */
 #define SAI_TX_FIFO_BASE(inst)\
-	POINTER_TO_UINT(FSL_FEATURE_SAI_TX_FIFO_BASEn(UINT_TO_I2S(DT_INST_REG_ADDR(inst)), 0))
+	FSL_FEATURE_SAI_TX_FIFO_BASEn(UINT_TO_I2S(DT_INST_REG_ADDR(inst)), 0)
 
 /* used to retrieve RFR0's address based on SAI's physical address */
 #define SAI_RX_FIFO_BASE(inst)\
-	POINTER_TO_UINT(FSL_FEATURE_SAI_RX_FIFO_BASEn(UINT_TO_I2S(DT_INST_REG_ADDR(inst)), 0))
+	FSL_FEATURE_SAI_RX_FIFO_BASEn(UINT_TO_I2S(DT_INST_REG_ADDR(inst)), 0)
 
 /* used to retrieve the FIFO's size (in 32-bit words) */
 #define SAI_FIFO_DEPTH(inst)\
@@ -477,6 +477,19 @@ static inline int count_leading_zeros(uint32_t word)
 	return num;
 }
 
+static inline void sai_tx_rx_set_dline_mask(enum dai_dir dir, uint32_t regmap, uint32_t mask)
+{
+	I2S_Type *base = UINT_TO_I2S(regmap);
+
+	if (dir == DAI_DIR_RX) {
+		base->RCR3 &= ~I2S_RCR3_RCE_MASK;
+		base->RCR3 |= I2S_RCR3_RCE(mask);
+	} else {
+		base->TCR3 &= ~I2S_TCR3_TCE_MASK;
+		base->TCR3 |= I2S_TCR3_TCE(mask);
+	}
+}
+
 static inline void sai_dump_register_data(uint32_t regmap)
 {
 	I2S_Type *base = UINT_TO_I2S(regmap);
@@ -484,7 +497,7 @@ static inline void sai_dump_register_data(uint32_t regmap)
 	LOG_DBG("TCSR: 0x%x", base->TCSR);
 	LOG_DBG("RCSR: 0x%x", base->RCSR);
 
-	LOG_DBG("RCSR: 0x%x", base->RCSR);
+	LOG_DBG("TCR1: 0x%x", base->TCR1);
 	LOG_DBG("RCR1: 0x%x", base->RCR1);
 
 	LOG_DBG("TCR2: 0x%x", base->TCR2);
