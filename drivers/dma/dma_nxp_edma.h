@@ -226,30 +226,30 @@ static inline void edma_dump_channel_registers(struct edma_data *data,
 {
 	DMA_Type *base = UINT_TO_DMA(data->regmap);
 
-	LOG_DBG("dumping channel data for channel %d", chan_id);
+	LOG_ERR("dumping channel data for channel %d", chan_id);
 
-	LOG_DBG("CH_CSR: 0x%x", base->CH[chan_id].CH_CSR);
-	LOG_DBG("CH_ES: 0x%x", base->CH[chan_id].CH_ES);
-	LOG_DBG("CH_INT: 0x%x", base->CH[chan_id].CH_INT);
-	LOG_DBG("CH_SBR: 0x%x", base->CH[chan_id].CH_SBR);
-	LOG_DBG("CH_PRI: 0x%x", base->CH[chan_id].CH_PRI);
-	LOG_DBG("CH_MUX: 0x%x", base->CH[chan_id].CH_MUX);
+	LOG_ERR("CH_CSR: 0x%x", base->CH[chan_id].CH_CSR);
+	LOG_ERR("CH_ES: 0x%x", base->CH[chan_id].CH_ES);
+	LOG_ERR("CH_INT: 0x%x", base->CH[chan_id].CH_INT);
+	LOG_ERR("CH_SBR: 0x%x", base->CH[chan_id].CH_SBR);
+	LOG_ERR("CH_PRI: 0x%x", base->CH[chan_id].CH_PRI);
+	LOG_ERR("CH_MUX: 0x%x", base->CH[chan_id].CH_MUX);
 
-	LOG_DBG("TCD_SADDR: 0x%x", base->CH[chan_id].TCD_SADDR);
-	LOG_DBG("TCD_SOFF: 0x%x", base->CH[chan_id].TCD_SOFF);
-	LOG_DBG("TCD_ATTR: 0x%x", base->CH[chan_id].TCD_ATTR);
-	LOG_DBG("TCD_NBYTES_MLOFFNO: 0x%x", base->CH[chan_id].TCD_NBYTES_MLOFFNO);
-	LOG_DBG("TCD_SLAST_SDA: 0x%x", base->CH[chan_id].TCD_SLAST_SDA);
+	LOG_ERR("TCD_SADDR: 0x%x", base->CH[chan_id].TCD_SADDR);
+	LOG_ERR("TCD_SOFF: 0x%x", base->CH[chan_id].TCD_SOFF);
+	LOG_ERR("TCD_ATTR: 0x%x", base->CH[chan_id].TCD_ATTR);
+	LOG_ERR("TCD_NBYTES_MLOFFNO: 0x%x", base->CH[chan_id].TCD_NBYTES_MLOFFNO);
+	LOG_ERR("TCD_SLAST_SDA: 0x%x", base->CH[chan_id].TCD_SLAST_SDA);
 
-	LOG_DBG("TCD_DADDR: 0x%x", base->CH[chan_id].TCD_DADDR);
-	LOG_DBG("TCD_DOFF: 0x%x", base->CH[chan_id].TCD_DOFF);
+	LOG_ERR("TCD_DADDR: 0x%x", base->CH[chan_id].TCD_DADDR);
+	LOG_ERR("TCD_DOFF: 0x%x", base->CH[chan_id].TCD_DOFF);
 
-	LOG_DBG("TCD_CITER_ELINKNO: 0x%x", base->CH[chan_id].TCD_CITER_ELINKNO);
-	LOG_DBG("TCD_DLAST_SGA 0x%x", base->CH[chan_id].TCD_DLAST_SGA);
+	LOG_ERR("TCD_CITER_ELINKNO: 0x%x", base->CH[chan_id].TCD_CITER_ELINKNO);
+	LOG_ERR("TCD_DLAST_SGA 0x%x", base->CH[chan_id].TCD_DLAST_SGA);
 
-	LOG_DBG("TCD_CSR 0x%x", base->CH[chan_id].TCD_CSR);
+	LOG_ERR("TCD_CSR 0x%x", base->CH[chan_id].TCD_CSR);
 
-	LOG_DBG("TCD_BITER_ELINKNO 0x%x", base->CH[chan_id].TCD_BITER_ELINKNO);
+	LOG_ERR("TCD_BITER_ELINKNO 0x%x", base->CH[chan_id].TCD_BITER_ELINKNO);
 }
 
 static inline int set_slast_dlast(struct dma_config *dma_config,

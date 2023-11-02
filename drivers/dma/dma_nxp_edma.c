@@ -286,10 +286,7 @@ static int edma_get_status(const struct device *dev, uint32_t chan_id,
 	struct edma_data *data;
 	struct edma_channel *chan;
 	DMA_Type *base;
-	uint32_t citer, biter, burst_size;
 	static int times = 5;
-	static uint64_t prev = 0;
-	static uint64_t time = 0;
 
 	data = dev->data;
 	base = UINT_TO_DMA(data->regmap);
@@ -303,6 +300,16 @@ static int edma_get_status(const struct device *dev, uint32_t chan_id,
 
 	stat->free = abs(base->CH[chan_id].TCD_SLAST_SDA) / 2;
 	stat->pending_length = abs(base->CH[chan_id].TCD_DLAST_SGA) / 2;
+
+	if (times) {
+		times--;
+		uint32_t citer = base->CH[chan_id].TCD_CITER_ELINKNO &
+			DMA_TCD_CITER_ELINKNO_CITER_MASK;
+		uint32_t biter = base->CH[chan_id].TCD_BITER_ELINKNO &
+			DMA_TCD_BITER_ELINKNO_BITER_MASK;
+
+		LOG_ERR("citer: %d, biter: %d", citer, biter);
+	}
 
 	return 0;
 }
