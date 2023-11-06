@@ -83,6 +83,39 @@ static int sai_mclk_config(const struct device *dev,
 }
 #endif /* CONFIG_SAI_HAS_MCLK_CONFIG_OPTION */
 
+void sai_isr(const void *parameter)
+{
+	const struct device *dev;
+	struct sai_data *data;
+	uint32_t tcsr, rcsr;
+
+	dev = parameter;
+	data = dev->data;
+
+	tcsr = SAI_TxGetStatusFlag(UINT_TO_I2S(data->regmap));
+	rcsr = SAI_RxGetStatusFlag(UINT_TO_I2S(data->regmap));
+
+//	if (tcsr & kSAI_FIFOWarningFlag) {
+//		LOG_ERR("empty TX FIFO detected at %lu CYCLES", k_cycle_get_32());
+//	}
+
+//	if (rcsr & kSAI_FIFOWarningFlag) {
+//		LOG_ERR("full RX FIFO detected at %lu CYCLES", k_cycle_get_32());
+//	}
+
+	if (tcsr & kSAI_FIFOErrorFlag) {
+		LOG_ERR("FIFO underrun detected at %lu CYCLES", k_cycle_get_32());
+		z_irq_spurious(NULL);
+	}
+
+	if (rcsr & kSAI_FIFOErrorFlag) {
+		LOG_ERR("FIFO overrun detected.");
+		z_irq_spurious(NULL);
+	}
+
+	return;
+}
+
 static int sai_config_get(const struct device *dev,
 			  struct dai_config *cfg,
 			  enum dai_dir dir)
@@ -308,6 +341,7 @@ static int sai_config_set(const struct device *dev,
 	}
 #endif /* CONFIG_SAI_HAS_MCLK_CONFIG_OPTION */
 
+
 	ret = sai_update_state(DAI_DIR_TX, data, DAI_STATE_READY);
 	if (ret < 0) {
 		LOG_ERR("failed to update TX state. Reason: %d", ret);
@@ -428,6 +462,8 @@ static int sai_trigger_pause(const struct device *dev,
 	/* update the software state of TX/RX */
 	sai_tx_rx_sw_enable_disable(dir, data, false);
 
+	LOG_ERR("DONE SAI PAUSE AT %lu CYCLES", k_cycle_get_32());
+
 	return 0;
 }
 
@@ -466,10 +502,14 @@ static int sai_trigger_stop(const struct device *dev,
 		goto out_dline_disable;
 	}
 
+	LOG_ERR("STARTING WAITING PROCEDURE AT %lu CYCLES", k_cycle_get_32());
+
 	ret = sai_tx_rx_disable(data, dir);
 	if (ret < 0) {
 		return ret;
 	}
+
+	LOG_ERR("ENDED WAITING PROCEDURE AT %lu CYCLES", k_cycle_get_32());
 
 	/* update the software state of TX/RX */
 	sai_tx_rx_sw_enable_disable(dir, data, false);
@@ -537,6 +577,9 @@ static int sai_trigger_start(const struct device *dev,
 			SAI_TX_RX_SW_RESET(dir, data->regmap);
 		}
 	}
+	/* enable interrupts */
+	SAI_TX_RX_ENABLE_IRQ(dir, data->regmap,
+			     kSAI_FIFOErrorInterruptEnable);
 
 	/* TODO: is there a need to write some words to the FIFO to avoid starvation? */
 
@@ -556,6 +599,8 @@ out_enable_tx_rx:
 
 	/* update the software state of TX/RX */
 	sai_tx_rx_sw_enable_disable(dir, data, true);
+
+	LOG_ERR("DONE SAI START AT %lu CYCLES", k_cycle_get_32());
 
 	return 0;
 }
@@ -638,6 +683,9 @@ static int sai_init(const struct device *dev)
 	data->tx_state = DAI_STATE_NOT_READY;
 	data->rx_state = DAI_STATE_NOT_READY;
 
+	/* register ISR and enable IRQ */
+	cfg->irq_config();
+
 	return 0;
 }
 
@@ -655,6 +703,16 @@ static const struct dai_properties sai_rx_props_##inst = {			\
 	.dma_hs_id = SAI_RX_DMA_MUX(inst),					\
 };										\
 										\
+void irq_config_##inst(void)							\
+{										\
+	IRQ_CONNECT(DT_INST_IRQN(inst),						\
+		    0,								\
+		    sai_isr,							\
+		    DEVICE_DT_INST_GET(inst),					\
+		    0);								\
+	irq_enable(DT_INST_IRQN(inst));						\
+}										\
+										\
 static struct sai_config sai_config_##inst = {					\
 	.regmap_phys = DT_INST_REG_ADDR(inst),					\
 	.regmap_size = DT_INST_REG_SIZE(inst),					\
@@ -664,6 +722,7 @@ static struct sai_config sai_config_##inst = {					\
 	.mclk_is_output = DT_INST_PROP_OR(inst, mclk_is_output, false),		\
 	.tx_props = &sai_tx_props_##inst,					\
 	.rx_props = &sai_rx_props_##inst,					\
+	.irq_config = irq_config_##inst,					\
 };										\
 										\
 static struct sai_data sai_data_##inst = {					\

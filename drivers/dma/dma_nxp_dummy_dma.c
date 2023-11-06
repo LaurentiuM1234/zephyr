@@ -235,7 +235,7 @@ static int dummy_dma_init(const struct device *dev)
 {
 	struct dummy_dma_data *data = dev->data;
 
-	data->channel_flags = ATOMIC_INIT(data->ctx.dma_channels);
+	data->channel_flags = ATOMIC_INIT(0);
 	data->ctx.atomic = &data->channel_flags;
 
 	return 0;

@@ -9,6 +9,9 @@
 /* used for driver binding */
 #define DT_DRV_COMPAT nxp_edma
 
+/* TODO: add support for requesting a specific channel */
+static int once = 5;
+
 static void edma_isr(const void *parameter)
 {
 	const struct edma_config *cfg;
@@ -85,6 +88,8 @@ static int edma_config(const struct device *dev, uint32_t chan_id,
 
 	data = dev->data;
 	cfg = dev->config;
+
+	once = 5;
 
 	if (!dma_config->head_block) {
 		LOG_ERR("head block shouldn't be NULL");
@@ -286,7 +291,6 @@ static int edma_get_status(const struct device *dev, uint32_t chan_id,
 	struct edma_data *data;
 	struct edma_channel *chan;
 	DMA_Type *base;
-	static int times = 5;
 
 	data = dev->data;
 	base = UINT_TO_DMA(data->regmap);
@@ -301,14 +305,17 @@ static int edma_get_status(const struct device *dev, uint32_t chan_id,
 	stat->free = abs(base->CH[chan_id].TCD_SLAST_SDA) / 2;
 	stat->pending_length = abs(base->CH[chan_id].TCD_DLAST_SGA) / 2;
 
-	if (times) {
-		times--;
+	if (once) {
+		LOG_ERR("QUERYING STATUS FOR CHANNEL %d", chan_id);
+		once--;
 		uint32_t citer = base->CH[chan_id].TCD_CITER_ELINKNO &
 			DMA_TCD_CITER_ELINKNO_CITER_MASK;
 		uint32_t biter = base->CH[chan_id].TCD_BITER_ELINKNO &
 			DMA_TCD_BITER_ELINKNO_BITER_MASK;
 
-		LOG_ERR("citer: %d, biter: %d", citer, biter);
+		LOG_ERR("citer: %d, biter: %d, done: %d at %lu cycles", citer, biter,
+			base->CH[chan->id].CH_CSR & DMA_CH_CSR_DONE_MASK,
+			k_cycle_get_32());
 	}
 
 	return 0;
@@ -366,6 +373,8 @@ static int edma_stop(const struct device *dev, uint32_t chan_id)
 		LOG_ERR("channel ID %u is not valid", chan_id);
 		return -EINVAL;
 	}
+
+	once = 5;
 
 	prev_state = chan->state;
 
@@ -434,7 +443,9 @@ static int edma_start(const struct device *dev, uint32_t chan_id)
 		return ret;
 	}
 
-	LOG_DBG("starting channel %u", chan_id);
+	LOG_ERR("starting channel %u", chan_id);
+
+	once = 5;
 
 	/* enable HW requests */
 	(UINT_TO_DMA(data->regmap))->CH[chan->id].CH_CSR |= DMA_CH_CSR_ERQ_MASK;
@@ -468,6 +479,7 @@ static int edma_reload(const struct device *dev, uint32_t chan_id, uint32_t src,
 		return -EINVAL;
 	}
 
+	/* channel needs to be started to allow reloading */
 	if (chan->state != CHAN_STATE_STARTED) {
 		LOG_ERR("reload is only supported on started channels");
 		return -EINVAL;
@@ -486,6 +498,10 @@ static int edma_reload(const struct device *dev, uint32_t chan_id, uint32_t src,
 	if (!(base->CH[chan->id].CH_CSR & DMA_CH_CSR_DONE_MASK)) {
 		LOG_WRN("transfer is on-going, ignoring reload");
 		return 0;
+	}
+
+	if (once) {
+		LOG_ERR("RELOADING");
 	}
 
 	/* allow slave peripheral to drive the next transfer */
@@ -558,7 +574,11 @@ static int edma_init(const struct device *dev)
 
 	EDMA_Init(UINT_TO_DMA(data->regmap), (const edma_config_t *)&edma_config);
 
-	data->channel_flags = ATOMIC_INIT(data->ctx.dma_channels);
+	/* dma_request_channel() uses this variable to keep track of the
+	 * available channels. As such, it needs to be initialized with NULL
+	 * which signifies that all channels are initially available.
+	 */
+	data->channel_flags = ATOMIC_INIT(0);
 	data->ctx.atomic = &data->channel_flags;
 
 	return 0;

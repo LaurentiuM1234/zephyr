@@ -127,8 +127,6 @@ LOG_MODULE_REGISTER(nxp_sai);
 #define SAI_RX_DMA_MUX(inst)\
 	FSL_FEATURE_SAI_RX_DMA_MUXn(UINT_TO_I2S(DT_INST_REG_ADDR(inst)))
 
-/* used to retrieve the DAI index */
-
 /* utility macros */
 
 /* invert a clock's polarity. This works because a clock's polarity is expressed
@@ -161,6 +159,16 @@ LOG_MODULE_REGISTER(nxp_sai);
 #define SAI_TX_RX_IS_HW_ENABLED(dir, regmap)\
 	((dir) == DAI_DIR_RX ? (UINT_TO_I2S(regmap)->RCSR & I2S_RCSR_RE_MASK) : \
 	 (UINT_TO_I2S(regmap)->TCSR & I2S_TCSR_TE_MASK))
+
+/* used to enable various transmitter/receiver interrupts */
+#define SAI_TX_RX_ENABLE_IRQ(dir, regmap, which)\
+	((dir) == DAI_DIR_RX ? SAI_RxEnableInterrupts(UINT_TO_I2S(regmap), which) : \
+	 SAI_TxEnableInterrupts(UINT_TO_I2S(regmap), which))
+
+/* used to check if a status flag is set */
+#define SAI_TX_RX_STATUS_IS_SET(dir, regmap, which)\
+	((dir) == DAI_DIR_RX ? ((UINT_TO_I2S(regmap))->RCSR & which) : \
+	 ((UINT_TO_I2S(regmap))->TCSR & which))
 
 enum sai_clock_provider {
 	SAI_CBP_CFP = (0 << 12), /* codec BCLK provider, codec FSYNC provider */
@@ -218,6 +226,7 @@ struct sai_config {
 	const struct dai_properties *tx_props;
 	const struct dai_properties *rx_props;
 	uint32_t dai_index;
+	void (*irq_config)(void);
 };
 
 /* this needs to perfectly match SOF's struct sof_ipc_dai_sai_params */
