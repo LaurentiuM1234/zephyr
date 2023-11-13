@@ -10,7 +10,6 @@
 #define DT_DRV_COMPAT nxp_edma
 
 /* TODO: add support for requesting a specific channel */
-static int once = 5;
 
 static void edma_isr(const void *parameter)
 {
@@ -18,6 +17,8 @@ static void edma_isr(const void *parameter)
 	struct edma_data *data;
 	struct edma_channel *chan;
 	DMA_Type *base;
+	int ret;
+	uint32_t update_size;
 
 	chan = (struct edma_channel *)parameter;
 	cfg = chan->dev->config;
@@ -31,6 +32,22 @@ static void edma_isr(const void *parameter)
 
 	/* clear interrupt */
 	base->CH[chan->id].CH_INT = DMA_CH_INT_INT_MASK;
+
+	if (chan->cyclic_buffer) {
+		update_size = chan->bsize;
+
+		if (IS_ENABLED(CONFIG_DMA_NXP_EDMA_ENABLE_HALFMAJOR_IRQ)) {
+			update_size = chan->bsize / 2;
+		} else {
+			update_size = chan->bsize;
+		}
+
+		/* TODO: add support for error handling here */
+		ret = EDMA_CHAN_PRODUCE_CONSUME_A(chan, update_size);
+		if (ret < 0) {
+			LOG_ERR("chan %d buffer overflow/underrun", chan->id);
+		}
+	}
 
 	/* TODO: are there any sanity checks we have to perform before invoking
 	 * the registered callback?
@@ -84,12 +101,12 @@ static int edma_config(const struct device *dev, uint32_t chan_id,
 	const struct edma_config *cfg;
 	struct edma_channel *chan;
 	edma_transfer_type_t transfer_type;
+	DMA_Type *base;
 	int ret;
 
 	data = dev->data;
 	cfg = dev->config;
-
-	once = 5;
+	base = UINT_TO_DMA(data->regmap);
 
 	if (!dma_config->head_block) {
 		LOG_ERR("head block shouldn't be NULL");
@@ -209,13 +226,45 @@ static int edma_config(const struct device *dev, uint32_t chan_id,
 		return -EINVAL;
 	}
 
+	/* save the block size for later usage in edma_reload */
+	chan->bsize = dma_config->head_block->block_size;
+
+	if (dma_config->cyclic) {
+		chan->cyclic_buffer = true;
+
+		chan->stat.read_position = 0;
+		chan->stat.write_position = 0;
+
+		/* ASSUMPTION: for CONSUMER-type channels, the buffer from
+		 * which the engine consumes should be full, while in the
+		 * case of PRODUCER-type channels it should be empty.
+		 */
+		switch (dma_config->channel_direction) {
+		case MEMORY_TO_PERIPHERAL:
+			chan->type = CHAN_TYPE_CONSUMER;
+			chan->stat.free = 0;
+			chan->stat.pending_length = chan->bsize;
+			break;
+		case PERIPHERAL_TO_MEMORY:
+			chan->type = CHAN_TYPE_PRODUCER;
+			chan->stat.pending_length = 0;
+			chan->stat.free = chan->bsize;
+			break;
+		default:
+			LOG_ERR("unsupported transfer dir %d for cyclic mode",
+				dma_config->channel_direction);
+			return -ENOTSUP;
+		}
+	} else {
+		chan->cyclic_buffer = false;
+	}
+
 	/* change channel's state to CONFIGURED */
 	ret = channel_change_state(chan, CHAN_STATE_CONFIGURED);
 	if (ret < 0) {
 		LOG_ERR("failed to change channel %d state to CONFIGURED", chan_id);
 		return ret;
 	}
-
 
 	ret = get_transfer_type(dma_config->channel_direction, &transfer_type);
 	if (ret < 0) {
@@ -236,8 +285,7 @@ static int edma_config(const struct device *dev, uint32_t chan_id,
 			     transfer_type);
 
 	/* commit configuration */
-	EDMA_SetTransferConfig(UINT_TO_DMA(data->regmap), chan_id,
-			       &chan->transfer_cfg, NULL);
+	EDMA_SetTransferConfig(base, chan_id, &chan->transfer_cfg, NULL);
 
 #ifdef CONFIG_DMA_NXP_EDMA_HAS_CHAN_MUX
 	/* although the EDMA_HAS_CHAN_MUX feature is enabled, not all eDMA
@@ -246,8 +294,7 @@ static int edma_config(const struct device *dev, uint32_t chan_id,
 	 * to set the MUX value or not.
 	 */
 	if (cfg->channel_mux) {
-		EDMA_SetChannelMux(UINT_TO_DMA(data->regmap),
-				   chan_id, dma_config->dma_slot);
+		EDMA_SetChannelMux(base, chan_id, dma_config->dma_slot);
 	}
 #endif /* CONFIG_DMA_NXP_EDMA_HAS_CHAN_MUX */
 
@@ -257,16 +304,21 @@ static int edma_config(const struct device *dev, uint32_t chan_id,
 		return ret;
 	}
 
-	/* allow interrupting the CPU when a major/half a major cycle is completed.
+	/* allow interrupting the CPU when a major cycle is completed.
 	 *
 	 * interesting note: only 1 major loop is performed per slave peripheral
 	 * DMA request. For instance, if block_size = 768 and burst_size = 192
 	 * we're going to get 4 transfers of 192 bytes. Each of these transfers
 	 * translates to a DMA request made by the slave peripheral.
 	 */
-	(UINT_TO_DMA(data->regmap))->CH[chan->id].TCD_CSR =
-		DMA_TCD_CSR_INTMAJOR_MASK | DMA_TCD_CSR_INTHALF_MASK |
-		DMA_CSR_DREQ_MASK;
+	base->CH[chan->id].TCD_CSR = DMA_TCD_CSR_INTMAJOR_MASK;
+
+	if (IS_ENABLED(CONFIG_DMA_NXP_EDMA_ENABLE_HALFMAJOR_IRQ)) {
+		/* if enabled through the above configuration, also
+		 * allow the CPU to be interrupted when CITER = BITER / 2.
+		 */
+		base->CH[chan->id].TCD_CSR |= DMA_TCD_CSR_INTHALF_MASK;
+	}
 
 	/* enable channel interrupt */
 	irq_enable(chan->irq);
@@ -277,20 +329,13 @@ static int edma_config(const struct device *dev, uint32_t chan_id,
 	return 0;
 }
 
-/* TODO: this function is bad and only works for SOF. Add support for
- * better querying the transfer status. The main problem is that
- * the DMA doesn't really support configurations in which you have
- * a cyclic buffer that you write data into after x ms so computing
- * free and pending_length based on just CITER and BITER will
- * end up returning incorrect results. Ideally, one should find a
- * way to solve this issue at the application level.
- */
 static int edma_get_status(const struct device *dev, uint32_t chan_id,
 			   struct dma_status *stat)
 {
 	struct edma_data *data;
 	struct edma_channel *chan;
 	DMA_Type *base;
+	uint32_t citer, biter, done, flags;
 
 	data = dev->data;
 	base = UINT_TO_DMA(data->regmap);
@@ -302,21 +347,33 @@ static int edma_get_status(const struct device *dev, uint32_t chan_id,
 		return -EINVAL;
 	}
 
-	stat->free = abs(base->CH[chan_id].TCD_SLAST_SDA) / 2;
-	stat->pending_length = abs(base->CH[chan_id].TCD_DLAST_SGA) / 2;
+	if (chan->cyclic_buffer) {
+		flags = irq_lock();
 
-	if (once) {
-		LOG_ERR("QUERYING STATUS FOR CHANNEL %d", chan_id);
-		once--;
-		uint32_t citer = base->CH[chan_id].TCD_CITER_ELINKNO &
+		stat->free = chan->stat.free;
+		stat->pending_length = chan->stat.pending_length;
+
+		irq_unlock(flags);
+	} else {
+		/* note: no locking required here. The DMA interrupts
+		 * have no effect over CITER and BITER.
+		 */
+		citer = base->CH[chan_id].TCD_CITER_ELINKNO &
 			DMA_TCD_CITER_ELINKNO_CITER_MASK;
-		uint32_t biter = base->CH[chan_id].TCD_BITER_ELINKNO &
+		biter = base->CH[chan_id].TCD_BITER_ELINKNO &
 			DMA_TCD_BITER_ELINKNO_BITER_MASK;
+		done = base->CH[chan->id].CH_CSR & DMA_CH_CSR_DONE_MASK;
 
-		LOG_ERR("citer: %d, biter: %d, done: %d at %lu cycles", citer, biter,
-			base->CH[chan->id].CH_CSR & DMA_CH_CSR_DONE_MASK,
-			k_cycle_get_32());
+		if (done) {
+			stat->free = chan->bsize;
+			stat->pending_length = 0;
+		} else {
+			stat->free = (biter - citer) * (chan->bsize / biter);
+			stat->pending_length = chan->bsize - stat->free;
+		}
 	}
+
+	LOG_DBG("free: %d, pending: %d", stat->free, stat->pending_length);
 
 	return 0;
 }
@@ -361,11 +418,12 @@ static int edma_stop(const struct device *dev, uint32_t chan_id)
 	const struct edma_config *cfg;
 	struct edma_channel *chan;
 	enum channel_state prev_state;
+	DMA_Type *base;
 	int ret;
-	uint32_t tries;
 
 	data = dev->data;
 	cfg = dev->config;
+	base = UINT_TO_DMA(data->regmap);
 
 	/* fetch channel data */
 	chan = lookup_channel(dev, chan_id);
@@ -374,11 +432,7 @@ static int edma_stop(const struct device *dev, uint32_t chan_id)
 		return -EINVAL;
 	}
 
-	once = 5;
-
 	prev_state = chan->state;
-
-	edma_dump_channel_registers(data, chan_id);
 
 	/* change channel's state to STOPPED */
 	ret = channel_change_state(chan, CHAN_STATE_STOPPED);
@@ -398,7 +452,7 @@ static int edma_stop(const struct device *dev, uint32_t chan_id)
 	}
 
 	/* disable HW requests */
-	(UINT_TO_DMA(data->regmap))->CH[chan->id].CH_CSR &= ~DMA_CH_CSR_ERQ_MASK;
+	base->CH[chan->id].CH_CSR &= ~DMA_CH_CSR_ERQ_MASK;
 
 out_release_channel:
 
@@ -412,7 +466,7 @@ out_release_channel:
 	 * configuration then please call dma_suspend() instead of dma_stop().
 	 */
 	if (cfg->channel_mux) {
-		EDMA_SetChannelMux(UINT_TO_DMA(data->regmap), chan_id, 0x0);
+		EDMA_SetChannelMux(base, chan_id, 0x0);
 	}
 #endif /* CONFIG_DMA_NXP_EDMA_HAS_CHAN_MUX */
 
@@ -445,17 +499,9 @@ static int edma_start(const struct device *dev, uint32_t chan_id)
 
 	LOG_ERR("starting channel %u", chan_id);
 
-	once = 5;
-
 	/* enable HW requests */
 	(UINT_TO_DMA(data->regmap))->CH[chan->id].CH_CSR |= DMA_CH_CSR_ERQ_MASK;
 
-	return 0;
-}
-
-static int edma_resume(const struct device *dev, uint32_t chan_id)
-{
-	/* nothing to be done here, just call dma_start() */
 	return 0;
 }
 
@@ -463,14 +509,10 @@ static int edma_reload(const struct device *dev, uint32_t chan_id, uint32_t src,
 		       uint32_t dst, size_t size)
 {
 	struct edma_data *data;
-	const struct edma_config *cfg;
 	struct edma_channel *chan;
-	DMA_Type *base;
 	int ret;
 
 	data = dev->data;
-	cfg = dev->config;
-	base = UINT_TO_DMA(data->regmap);
 
 	/* fetch channel data */
 	chan = lookup_channel(dev, chan_id);
@@ -485,27 +527,16 @@ static int edma_reload(const struct device *dev, uint32_t chan_id, uint32_t src,
 		return -EINVAL;
 	}
 
-	/* check if there's a pending transfer
-	 *
-	 * note: this function shall not return an error
-	 * if called mid transfer as this case may be pretty
-	 * common (e.g: SOF sometimes calls it after the completion
-	 * of half a major cycle). As such, please use with caution
-	 * as it may not always have the desired effect.
-	 *
-	 * TODO: should it return an error and handle it at application level?
-	 */
-	if (!(base->CH[chan->id].CH_CSR & DMA_CH_CSR_DONE_MASK)) {
-		LOG_WRN("transfer is on-going, ignoring reload");
-		return 0;
+	if (chan->cyclic_buffer) {
+		/* note: no need to lock here as this will update the
+		 * opposite direction w.r.t the ISR.
+		 */
+		ret = EDMA_CHAN_PRODUCE_CONSUME_B(chan, size);
+		if (ret < 0) {
+			LOG_ERR("chan %d buffer overflow/underrun", chan_id);
+			return ret;
+		}
 	}
-
-	if (once) {
-		LOG_ERR("RELOADING");
-	}
-
-	/* allow slave peripheral to drive the next transfer */
-	(UINT_TO_DMA(data->regmap))->CH[chan->id].CH_CSR |= DMA_CH_CSR_ERQ_MASK;
 
 	return 0;
 }
@@ -552,7 +583,7 @@ static const struct dma_driver_api edma_api = {
 	.start = edma_start,
 	.stop = edma_stop,
 	.suspend = edma_suspend,
-	.resume = edma_resume,
+	.resume = edma_start,
 	.get_status = edma_get_status,
 	.get_attribute = edma_get_attribute,
 };

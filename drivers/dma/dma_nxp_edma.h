@@ -95,6 +95,21 @@ LOG_MODULE_REGISTER(nxp_edma);
 /* utility macros */
 #define UINT_TO_DMA(regmap) ((DMA_Type *)(regmap))
 
+#define EDMA_CHAN_PRODUCE_CONSUME_A(chan, size)\
+	((chan)->type == CHAN_TYPE_CONSUMER ?\
+	 edma_chan_cyclic_consume(chan, size) :\
+	 edma_chan_cyclic_produce(chan, size))
+
+#define EDMA_CHAN_PRODUCE_CONSUME_B(chan, size)\
+	((chan)->type == CHAN_TYPE_CONSUMER ?\
+	 edma_chan_cyclic_produce(chan, size) :\
+	 edma_chan_cyclic_consume(chan, size))
+
+enum channel_type {
+	CHAN_TYPE_CONSUMER = 0,
+	CHAN_TYPE_PRODUCER,
+};
+
 enum channel_state {
 	CHAN_STATE_INIT = 0,
 	CHAN_STATE_CONFIGURED,
@@ -107,10 +122,14 @@ struct edma_channel {
 	uint32_t id;
 	const struct device *dev;
 	enum channel_state state;
+	enum channel_type type;
 	edma_transfer_config_t transfer_cfg;
 	void *arg;
 	dma_callback_t cb;
 	int irq;
+	struct dma_status stat;
+	uint32_t bsize;
+	bool cyclic_buffer;
 };
 
 struct edma_data {
@@ -219,6 +238,87 @@ static inline bool data_size_is_valid(uint16_t size)
 	}
 
 	return true;
+}
+
+/* TODO: we may require setting the channel type through DTS
+ * or through struct dma_config. For now, we'll only support
+ * MEMORY_TO_PERIPHERAL and PERIPHERAL_TO_MEMORY directions
+ * and assume that these are bound to a certain channel type.
+ */
+static inline int edma_set_channel_type(struct edma_channel *chan,
+					enum dma_channel_direction dir)
+{
+	switch (dir) {
+	case MEMORY_TO_PERIPHERAL:
+		chan->type = CHAN_TYPE_CONSUMER;
+		break;
+	case PERIPHERAL_TO_MEMORY:
+		chan->type = CHAN_TYPE_PRODUCER;
+		break;
+	default:
+		LOG_ERR("unsupported transfer direction: %d", dir);
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+
+static inline int edma_chan_cyclic_consume(struct edma_channel *chan,
+					   uint32_t bytes)
+{
+	if (bytes > chan->stat.pending_length) {
+		return -EINVAL;
+	}
+
+	chan->stat.read_position =
+		(chan->stat.read_position + bytes) % chan->bsize;
+
+	/* TODO: how should we handle the case in which we consume more
+	 * data than available?
+	 */
+
+	if (chan->stat.read_position > chan->stat.write_position) {
+		chan->stat.free = chan->stat.read_position -
+			chan->stat.write_position;
+	} else if (chan->stat.read_position == chan->stat.write_position) {
+		chan->stat.free = chan->bsize;
+	} else {
+		chan->stat.free = chan->bsize -
+			(chan->stat.write_position - chan->stat.read_position);
+	}
+
+	chan->stat.pending_length = chan->bsize - chan->stat.free;
+
+	return 0;
+}
+
+static inline int edma_chan_cyclic_produce(struct edma_channel *chan,
+					   uint32_t bytes)
+{
+	if (bytes > chan->stat.free) {
+		return -EINVAL;
+	}
+
+	chan->stat.write_position =
+		(chan->stat.write_position + bytes) % chan->bsize;
+
+	/* TODO: how should we handle the case in which we produce
+	 * more than free space?
+	 */
+
+	if (chan->stat.write_position > chan->stat.read_position) {
+		chan->stat.pending_length = chan->stat.write_position -
+			chan->stat.read_position;
+	} else if (chan->stat.write_position == chan->stat.read_position) {
+		chan->stat.pending_length = chan->bsize;
+	} else {
+		chan->stat.pending_length = chan->bsize -
+			(chan->stat.read_position - chan->stat.write_position);
+	}
+
+	chan->stat.free = chan->bsize - chan->stat.pending_length;
+
+	return 0;
 }
 
 static inline void edma_dump_channel_registers(struct edma_data *data,

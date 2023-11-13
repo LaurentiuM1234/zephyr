@@ -13,7 +13,20 @@
 #define SAI_MCLK_THRESHOLD 1000
 
 /* used for binding the driver */
-#define DT_DRV_COMPAT nxp_sai
+#define DT_DRV_COMPAT nxp_dai_sai
+
+/* TODO list:
+ *
+ * 1) No busy waiting should be performed in any of the operations.
+ * In the case of STOP(), the operation should be split into TRIGGER_STOP
+ * and TRIGGER_POST_STOP. (SOF)
+ *
+ * 2) The SAI ISR should stop the SAI whenever a FIFO error interrupt
+ * is raised.
+ *
+ * 3) Transmitter/receiver may remain enabled after sai_tx_rx_disable().
+ * Fix this.
+ */
 
 #ifdef CONFIG_SAI_HAS_MCLK_CONFIG_OPTION
 /* note: i.MX8 boards don't seem to support the MICS field in the MCR
@@ -51,7 +64,7 @@ static int sai_mclk_config(const struct device *dev,
 	LOG_DBG("source MCLK is %u", mclk_rate);
 	LOG_DBG("target MCLK is %u", bespoke->mclk_rate);
 
-	/* TODO: explain this better + try to remove SAI_MCLK_THRESHOLD */
+	/* TODO: Is it possible to get rid of SAI_MCLK_THRESHOLD? */
 
 	/* workaround the fact that the rates passed through the topology
 	 * files are "ideal" rates, meaning the actualy MCLK rates can
@@ -87,29 +100,25 @@ void sai_isr(const void *parameter)
 {
 	const struct device *dev;
 	struct sai_data *data;
-	uint32_t tcsr, rcsr;
 
 	dev = parameter;
 	data = dev->data;
 
-	tcsr = SAI_TxGetStatusFlag(UINT_TO_I2S(data->regmap));
-	rcsr = SAI_RxGetStatusFlag(UINT_TO_I2S(data->regmap));
-
-//	if (tcsr & kSAI_FIFOWarningFlag) {
-//		LOG_ERR("empty TX FIFO detected at %lu CYCLES", k_cycle_get_32());
-//	}
-
-//	if (rcsr & kSAI_FIFOWarningFlag) {
-//		LOG_ERR("full RX FIFO detected at %lu CYCLES", k_cycle_get_32());
-//	}
-
-	if (tcsr & kSAI_FIFOErrorFlag) {
-		LOG_ERR("FIFO underrun detected at %lu CYCLES", k_cycle_get_32());
+	/* check for TX FIFO error */
+	if (SAI_TX_RX_STATUS_IS_SET(DAI_DIR_TX, data->regmap, kSAI_FIFOErrorFlag)) {
+		LOG_ERR("FIFO underrun detected");
+		/* TODO: this will crash the program and should be addressed as
+		 * mentioned in TODO list's 2).
+		 */
 		z_irq_spurious(NULL);
 	}
 
-	if (rcsr & kSAI_FIFOErrorFlag) {
-		LOG_ERR("FIFO overrun detected.");
+	/* check for RX FIFO error */
+	if (SAI_TX_RX_STATUS_IS_SET(DAI_DIR_RX, data->regmap, kSAI_FIFOErrorFlag)) {
+		LOG_ERR("FIFO overrun detected");
+		/* TODO: this will crash the program and should be addressed as
+		 * mentioned in TODO list's 2).
+		 */
 		z_irq_spurious(NULL);
 	}
 
@@ -175,6 +184,22 @@ static int sai_config_set(const struct device *dev,
 		return -EINVAL;
 	}
 
+	/* since this function configures the transmitter AND the receiver, that
+	 * means both of them need to be stopped. As such, doing the state
+	 * transition here will also result in a state check.
+	 */
+	ret = sai_update_state(DAI_DIR_TX, data, DAI_STATE_READY);
+	if (ret < 0) {
+		LOG_ERR("failed to update TX state. Reason: %d", ret);
+		return ret;
+	}
+
+	ret = sai_update_state(DAI_DIR_RX, data, DAI_STATE_READY);
+	if (ret < 0) {
+		LOG_ERR("failed to update RX state. Reason: %d", ret);
+		return ret;
+	}
+
 	/* condition: BCLK = FSYNC * TDM_SLOT_WIDTH * TDM_SLOTS */
 	if (bespoke->bclk_rate !=
 	    (bespoke->fsync_rate * bespoke->tdm_slot_width * bespoke->tdm_slots)) {
@@ -225,35 +250,35 @@ static int sai_config_set(const struct device *dev,
 	tx_config->serialData.dataWordNum = bespoke->tdm_slots;
 
 	/* clock provider configuration */
-	switch (cfg->format & SAI_FORMAT_CLOCK_PROVIDER_MASK) {
-	case SAI_CBP_CFP:
+	switch (cfg->format & DAI_FORMAT_CLOCK_PROVIDER_MASK) {
+	case DAI_CBP_CFP:
 		tx_config->masterSlave = kSAI_Slave;
 		break;
-	case SAI_CBC_CFC:
+	case DAI_CBC_CFC:
 		tx_config->masterSlave = kSAI_Master;
 		break;
-	case SAI_CBC_CFP:
-	case SAI_CBP_CFC:
+	case DAI_CBC_CFP:
+	case DAI_CBP_CFC:
 		LOG_ERR("unsupported provider configuration: %d",
-			cfg->format & SAI_FORMAT_CLOCK_PROVIDER_MASK);
+			cfg->format & DAI_FORMAT_CLOCK_PROVIDER_MASK);
 		return -ENOTSUP;
 	default:
 		LOG_ERR("invalid provider configuration: %d",
-			cfg->format & SAI_FORMAT_CLOCK_PROVIDER_MASK);
+			cfg->format & DAI_FORMAT_CLOCK_PROVIDER_MASK);
 		return -EINVAL;
 	}
 
 	LOG_DBG("SAI is in %d mode", tx_config->masterSlave);
 
 	/* protocol configuration */
-	switch (cfg->format & SAI_FORMAT_PROTOCOL_MASK) {
-	case SAI_PROTOCOL_I2S:
+	switch (cfg->format & DAI_FORMAT_PROTOCOL_MASK) {
+	case DAI_PROTO_I2S:
 		/* BCLK is active LOW */
 		tx_config->bitClock.bclkPolarity = kSAI_PolarityActiveLow;
 		/* FSYNC is active LOW */
 		tx_config->frameSync.frameSyncPolarity = kSAI_PolarityActiveLow;
 		break;
-	case SAI_PROTOCOL_DSP_A:
+	case DAI_PROTO_DSP_A:
 		/* FSYNC is asserted for a single BCLK */
 		tx_config->frameSync.frameSyncWidth = 1;
 		/* BCLK is active LOW */
@@ -261,31 +286,31 @@ static int sai_config_set(const struct device *dev,
 		break;
 	default:
 		LOG_ERR("unsupported DAI protocol: %d",
-			cfg->format & SAI_FORMAT_PROTOCOL_MASK);
+			cfg->format & DAI_FORMAT_PROTOCOL_MASK);
 		return -EINVAL;
 	}
 
 	LOG_DBG("SAI uses protocol: %d",
-		cfg->format & SAI_FORMAT_PROTOCOL_MASK);
+		cfg->format & DAI_FORMAT_PROTOCOL_MASK);
 
 	/* clock inversion configuration */
-	switch (cfg->format & SAI_FORMAT_INVERSION_MASK) {
-	case SAI_INVERSION_IB_IF:
+	switch (cfg->format & DAI_FORMAT_CLOCK_INVERSION_MASK) {
+	case DAI_INVERSION_IB_IF:
 		SAI_INVERT_POLARITY(tx_config->bitClock.bclkPolarity);
 		SAI_INVERT_POLARITY(tx_config->frameSync.frameSyncPolarity);
 		break;
-	case SAI_INVERSION_IB_NF:
+	case DAI_INVERSION_IB_NF:
 		SAI_INVERT_POLARITY(tx_config->bitClock.bclkPolarity);
 		break;
-	case SAI_INVERSION_NB_IF:
+	case DAI_INVERSION_NB_IF:
 		SAI_INVERT_POLARITY(tx_config->frameSync.frameSyncPolarity);
 		break;
-	case SAI_INVERSION_NB_NF:
+	case DAI_INVERSION_NB_NF:
 		/* nothing to do here */
 		break;
 	default:
 		LOG_ERR("invalid clock inversion configuration: %d",
-			cfg->format & SAI_FORMAT_INVERSION_MASK);
+			cfg->format & DAI_FORMAT_CLOCK_INVERSION_MASK);
 		return -EINVAL;
 	}
 
@@ -297,8 +322,6 @@ static int sai_config_set(const struct device *dev,
 
 	tx_config->serialData.dataMaskedWord = ~bespoke->tx_slots;
 	rx_config->serialData.dataMaskedWord = ~bespoke->rx_slots;
-
-	/* TODO: validate if watermark's value is in [0, 127] */
 
 	tx_config->fifo.fifoWatermark = sai_cfg->tx_fifo_watermark - 1;
 	rx_config->fifo.fifoWatermark = sai_cfg->rx_fifo_watermark - 1;
@@ -342,18 +365,6 @@ static int sai_config_set(const struct device *dev,
 #endif /* CONFIG_SAI_HAS_MCLK_CONFIG_OPTION */
 
 
-	ret = sai_update_state(DAI_DIR_TX, data, DAI_STATE_READY);
-	if (ret < 0) {
-		LOG_ERR("failed to update TX state. Reason: %d", ret);
-		return ret;
-	}
-
-	ret = sai_update_state(DAI_DIR_RX, data, DAI_STATE_READY);
-	if (ret < 0) {
-		LOG_ERR("failed to update RX state. Reason: %d", ret);
-		return ret;
-	}
-
 	/* TODO: should we leave this here? */
 	data->cfg.rate = bespoke->fsync_rate;
 
@@ -362,6 +373,19 @@ static int sai_config_set(const struct device *dev,
 	return 0;
 }
 
+/* SOF note: please be very careful with this function as it does
+ * busy waiting and may mess up your timing in time critial applications
+ * (especially with timer domain). If this becomes unusable, the busy
+ * waiting should be removed altogether and the HW state check should
+ * be performed in sai_trigger_start() or in sai_config_set().
+ *
+ * TODO: seems like the transmitter still remains active (even if 1ms
+ * has passed after doing a sai_trigger_stop()!). Most likely this is
+ * because sai_trigger_stop() immediately stops the data line w/o
+ * checking the HW state of the transmitter/reciever. As such, to get
+ * rid of the busy waiting, the STOP operation may have to be split into
+ * 2 operations: TRIG_STOP and TRIG_POST_STOP.
+ */
 static int sai_tx_rx_disable(struct sai_data *data, enum dai_dir dir)
 {
 	/* sai_disable() should never be called from ISR context
@@ -462,8 +486,6 @@ static int sai_trigger_pause(const struct device *dev,
 	/* update the software state of TX/RX */
 	sai_tx_rx_sw_enable_disable(dir, data, false);
 
-	LOG_ERR("DONE SAI PAUSE AT %lu CYCLES", k_cycle_get_32());
-
 	return 0;
 }
 
@@ -481,8 +503,6 @@ static int sai_trigger_stop(const struct device *dev,
 		LOG_ERR("invalid direction: %d", dir);
 		return -EINVAL;
 	}
-
-	sai_dump_register_data(data->regmap);
 
 	/* attempt to change state */
 	ret = sai_update_state(dir, data, DAI_STATE_STOPPING);
@@ -502,14 +522,10 @@ static int sai_trigger_stop(const struct device *dev,
 		goto out_dline_disable;
 	}
 
-	LOG_ERR("STARTING WAITING PROCEDURE AT %lu CYCLES", k_cycle_get_32());
-
 	ret = sai_tx_rx_disable(data, dir);
 	if (ret < 0) {
 		return ret;
 	}
-
-	LOG_ERR("ENDED WAITING PROCEDURE AT %lu CYCLES", k_cycle_get_32());
 
 	/* update the software state of TX/RX */
 	sai_tx_rx_sw_enable_disable(dir, data, false);
@@ -520,6 +536,10 @@ out_dline_disable:
 
 	/* disable DMA requests */
 	SAI_TX_RX_DMA_ENABLE_DISABLE(dir, data->regmap, false);
+
+	/* disable error interrupt */
+	SAI_TX_RX_ENABLE_DISABLE_IRQ(dir, data->regmap,
+				     kSAI_FIFOErrorInterruptEnable, false);
 
 	return 0;
 }
@@ -577,9 +597,10 @@ static int sai_trigger_start(const struct device *dev,
 			SAI_TX_RX_SW_RESET(dir, data->regmap);
 		}
 	}
-	/* enable interrupts */
-	SAI_TX_RX_ENABLE_IRQ(dir, data->regmap,
-			     kSAI_FIFOErrorInterruptEnable);
+
+	/* enable error interrupt */
+	SAI_TX_RX_ENABLE_DISABLE_IRQ(dir, data->regmap,
+				     kSAI_FIFOErrorInterruptEnable, true);
 
 	/* TODO: is there a need to write some words to the FIFO to avoid starvation? */
 
@@ -599,8 +620,6 @@ out_enable_tx_rx:
 
 	/* update the software state of TX/RX */
 	sai_tx_rx_sw_enable_disable(dir, data, true);
-
-	LOG_ERR("DONE SAI START AT %lu CYCLES", k_cycle_get_32());
 
 	return 0;
 }
@@ -691,15 +710,31 @@ static int sai_init(const struct device *dev)
 
 #define SAI_INIT(inst)								\
 										\
+BUILD_ASSERT(SAI_FIFO_DEPTH(inst) > 0 &&					\
+	     SAI_FIFO_DEPTH(inst) <= _SAI_FIFO_DEPTH(inst),			\
+	     "invalid FIFO depth");						\
+										\
+BUILD_ASSERT(SAI_RX_FIFO_WATERMARK(inst) > 0 &&					\
+	     SAI_RX_FIFO_WATERMARK(inst) <= _SAI_FIFO_DEPTH(inst),		\
+	     "invalid RX FIFO watermark");					\
+										\
+BUILD_ASSERT(SAI_TX_FIFO_WATERMARK(inst) > 0 &&					\
+	     SAI_TX_FIFO_WATERMARK(inst) <= _SAI_FIFO_DEPTH(inst),		\
+	     "invalid TX FIFO watermark");					\
+										\
+BUILD_ASSERT(IS_ENABLED(CONFIG_SAI_HAS_MCLK_CONFIG_OPTION) ||			\
+	     !DT_INST_PROP(inst, mclk_is_output),				\
+	     "SAI doesn't support MCLK config but mclk_is_output is specified");\
+										\
 static const struct dai_properties sai_tx_props_##inst = {			\
 	.fifo_address = SAI_TX_FIFO_BASE(inst),					\
-	.fifo_depth = 192,							\
+	.fifo_depth = SAI_FIFO_DEPTH(inst) * CONFIG_SAI_FIFO_WORD_SIZE,		\
 	.dma_hs_id = SAI_TX_DMA_MUX(inst),					\
 };										\
 										\
 static const struct dai_properties sai_rx_props_##inst = {			\
 	.fifo_address = SAI_RX_FIFO_BASE(inst),					\
-	.fifo_depth = 192,							\
+	.fifo_depth = SAI_FIFO_DEPTH(inst) * CONFIG_SAI_FIFO_WORD_SIZE,		\
 	.dma_hs_id = SAI_RX_DMA_MUX(inst),					\
 };										\
 										\

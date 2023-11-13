@@ -4,7 +4,7 @@
 config DAI_NXP_SAI
 	bool "NXP Synchronous Audio Interface (SAI) driver"
 	default y
-	depends on DT_HAS_NXP_SAI_ENABLED
+	depends on DT_HAS_NXP_DAI_SAI_ENABLED
 	help
 		Select this to enable NXP SAI driver.
 
@@ -26,5 +26,12 @@ config SAI_HAS_XCR4_CHMOD
 	help
 		Select this if the SAI IP has the CHMOD
 		field in the XCR4 registers.
+
+config SAI_FIFO_WORD_SIZE
+	int "Size (in bytes) of a FIFO word"
+	default 4
+	help
+		Use this to set the size (in bytes) of a SAI
+		FIFO word.
 
 endif # DAI_NXP_SAI

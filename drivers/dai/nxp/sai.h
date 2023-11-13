@@ -10,18 +10,12 @@
 #include <zephyr/logging/log.h>
 #include <fsl_sai.h>
 
-LOG_MODULE_REGISTER(nxp_sai);
-
-/* format masks */
-#define SAI_FORMAT_CLOCK_PROVIDER_MASK 0xf000
-#define SAI_FORMAT_PROTOCOL_MASK 0x000f
-#define SAI_FORMAT_INVERSION_MASK 0x0f00
+LOG_MODULE_REGISTER(nxp_dai_sai);
 
 #ifdef CONFIG_SAI_HAS_MCLK_CONFIG_OPTION
 #define SAI_MCLK_MCR_MSEL_SHIFT 24
 #define SAI_MCLK_MCR_MSEL_MASK GENMASK(24, 25)
 #endif /* CONFIG_SAI_HAS_MCLK_CONFIG_OPTION */
-
 /* workaround the fact that device_map() doesn't exist for SoCs with no MMU */
 #ifndef DEVICE_MMIO_IS_IN_RAM
 #define device_map(virt, phys, size, flags) *(virt) = (phys)
@@ -61,7 +55,7 @@ LOG_MODULE_REGISTER(nxp_sai);
  * is not specified then this macro will return {}.
  */
 #define _SAI_GET_CLOCK_ARRAY(inst)\
-	COND_CODE_1(DT_NODE_HAS_PROP(DT_INST(inst, nxp_sai), clocks),\
+	COND_CODE_1(DT_NODE_HAS_PROP(DT_INST(inst, nxp_dai_sai), clocks),\
 		    ({ _SAI_CLOCK_ID_ARRAY(inst) }),\
 		    ({ }))
 
@@ -70,7 +64,7 @@ LOG_MODULE_REGISTER(nxp_sai);
  * This macro returns a NULL if the clocks property doesn't exist.
  */
 #define _SAI_GET_CLOCK_CONTROLLER(inst)\
-	COND_CODE_1(DT_NODE_HAS_PROP(DT_INST(inst, nxp_sai), clocks),\
+	COND_CODE_1(DT_NODE_HAS_PROP(DT_INST(inst, nxp_dai_sai), clocks),\
 		    (DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(inst))),\
 		    (NULL))
 
@@ -78,7 +72,7 @@ LOG_MODULE_REGISTER(nxp_sai);
  * property is not specified then this macro will return {}.
  */
 #define _SAI_GET_CLOCK_NAMES(inst)\
-	COND_CODE_1(DT_NODE_HAS_PROP(DT_INST(inst, nxp_sai), clocks),\
+	COND_CODE_1(DT_NODE_HAS_PROP(DT_INST(inst, nxp_dai_sai), clocks),\
 		    ({ _SAI_CLOCK_NAME_ARRAY(inst) }),\
 		    ({ }))
 
@@ -115,9 +109,13 @@ LOG_MODULE_REGISTER(nxp_sai);
 #define SAI_RX_FIFO_BASE(inst)\
 	FSL_FEATURE_SAI_RX_FIFO_BASEn(UINT_TO_I2S(DT_INST_REG_ADDR(inst)), 0)
 
-/* used to retrieve the FIFO's size (in 32-bit words) */
-#define SAI_FIFO_DEPTH(inst)\
+/* internal macro used to retrieve the default TX/RX FIFO's size (in FIFO words) */
+#define _SAI_FIFO_DEPTH(inst)\
 	FSL_FEATURE_SAI_FIFO_COUNTn(UINT_TO_I2S(DT_INST_REG_ADDR(inst)))
+
+/* used to retrieve the TX/RX FIFO's size (in FIFO words) */
+#define SAI_FIFO_DEPTH(inst)\
+	DT_INST_PROP_OR(inst, fifo_depth, _SAI_FIFO_DEPTH(inst))
 
 /* used to retrieve the DMA MUX for transmitter */
 #define SAI_TX_DMA_MUX(inst)\
@@ -161,37 +159,24 @@ LOG_MODULE_REGISTER(nxp_sai);
 	 (UINT_TO_I2S(regmap)->TCSR & I2S_TCSR_TE_MASK))
 
 /* used to enable various transmitter/receiver interrupts */
-#define SAI_TX_RX_ENABLE_IRQ(dir, regmap, which)\
+#define _SAI_TX_RX_ENABLE_IRQ(dir, regmap, which)\
 	((dir) == DAI_DIR_RX ? SAI_RxEnableInterrupts(UINT_TO_I2S(regmap), which) : \
 	 SAI_TxEnableInterrupts(UINT_TO_I2S(regmap), which))
 
+/* used to disable various transmitter/receiver interrupts */
+#define _SAI_TX_RX_DISABLE_IRQ(dir, regmap, which)\
+	((dir) == DAI_DIR_RX ? SAI_RxDisableInterrupts(UINT_TO_I2S(regmap), which) : \
+	 SAI_TxDisableInterrupts(UINT_TO_I2S(regmap), which))
+
+/* used to enable/disable various transmitter/receiver interrupts */
+#define SAI_TX_RX_ENABLE_DISABLE_IRQ(dir, regmap, which, enable)\
+	((enable == true) ? _SAI_TX_RX_ENABLE_IRQ(dir, regmap, which) :\
+	 _SAI_TX_RX_DISABLE_IRQ(dir, regmap, which))
+
 /* used to check if a status flag is set */
 #define SAI_TX_RX_STATUS_IS_SET(dir, regmap, which)\
-	((dir) == DAI_DIR_RX ? ((UINT_TO_I2S(regmap))->RCSR & which) : \
-	 ((UINT_TO_I2S(regmap))->TCSR & which))
-
-enum sai_clock_provider {
-	SAI_CBP_CFP = (0 << 12), /* codec BCLK provider, codec FSYNC provider */
-	SAI_CBC_CFP = (2 << 12), /* codec BCLK consumer, codec FSYNC provider */
-	SAI_CBP_CFC = (3 << 12), /* codec BCLK provider, codec FSYC consumer */
-	SAI_CBC_CFC = (4 << 12), /* codec BCLK consumer, codec FSYNC consumer */
-};
-
-enum sai_protocol {
-	SAI_PROTOCOL_I2S = 1, /* I2S */
-	SAI_PROTOCOL_RIGHT_J = 2, /* Right Justified */
-	SAI_PROTOCOL_LEFT_J = 3, /* Left Justified */
-	SAI_PROTOCOL_DSP_A = 4, /* FSYNC asserted 1 BCLK early */
-	SAI_PROTOCOL_DSP_B = 5, /* FSYNC asserted at the same time as MSB */
-	SAI_PROTOCOL_PDM = 6, /* Pulse density modulation */
-};
-
-enum sai_inversion {
-	SAI_INVERSION_NB_NF = 0, /* no BCLK inversion, no FSYNC inversion */
-	SAI_INVERSION_NB_IF = (2 << 8), /* no BCLK inversion, FSYNC inversion */
-	SAI_INVERSION_IB_NF = (3 << 8), /* BLCK inversion, no FSYNC inversion */
-	SAI_INVERSION_IB_IF = (4 << 8), /* BCLK inversion, FSYNC inversion */
-};
+	((dir) == DAI_DIR_RX ? ((UINT_TO_I2S(regmap))->RCSR & (which)) : \
+	 ((UINT_TO_I2S(regmap))->TCSR & (which)))
 
 struct sai_clock_data {
 	uint32_t *clocks;

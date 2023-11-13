@@ -24,10 +24,13 @@ config DMA_NXP_EDMA_MAX_ALIGN
 	help
 		Some helpful message should go here.
 
-config DMA_NXP_EDMA_MAX_STOP_TRIES
-	int "Some helpful message should go here"
-	default 1
+config DMA_NXP_EDMA_ENABLE_HALFMAJOR_IRQ
+	bool "Set if CPU should be interrupted when CITER = BITER / 2"
+	default n
 	help
-		Some helpful message should go here.
+		Enable this configuration if the CPU should be
+		interrupted when CITER = BITER / 2. Using this,
+		the CPU will be interrupted when CITER = BITER and
+		when CITER = BITER / 2.
 
 endif # DMA_NXP_EDMA
