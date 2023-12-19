@@ -514,29 +514,29 @@ static inline void sai_dump_register_data(uint32_t regmap)
 {
 	I2S_Type *base = UINT_TO_I2S(regmap);
 
-	LOG_DBG("TCSR: 0x%x", base->TCSR);
-	LOG_DBG("RCSR: 0x%x", base->RCSR);
+	LOG_ERR("TCSR: 0x%x", base->TCSR);
+	LOG_ERR("RCSR: 0x%x", base->RCSR);
 
-	LOG_DBG("TCR1: 0x%x", base->TCR1);
-	LOG_DBG("RCR1: 0x%x", base->RCR1);
+	LOG_ERR("TCR1: 0x%x", base->TCR1);
+	LOG_ERR("RCR1: 0x%x", base->RCR1);
 
-	LOG_DBG("TCR2: 0x%x", base->TCR2);
-	LOG_DBG("RCR2: 0x%x", base->RCR2);
+	LOG_ERR("TCR2: 0x%x", base->TCR2);
+	LOG_ERR("RCR2: 0x%x", base->RCR2);
 
-	LOG_DBG("TCR3: 0x%x", base->TCR3);
-	LOG_DBG("RCR3: 0x%x", base->RCR3);
+	LOG_ERR("TCR3: 0x%x", base->TCR3);
+	LOG_ERR("RCR3: 0x%x", base->RCR3);
 
-	LOG_DBG("TCR4: 0x%x", base->TCR4);
-	LOG_DBG("RCR4: 0x%x", base->RCR4);
+	LOG_ERR("TCR4: 0x%x", base->TCR4);
+	LOG_ERR("RCR4: 0x%x", base->RCR4);
 
-	LOG_DBG("TCR5: 0x%x", base->TCR5);
-	LOG_DBG("RCR5: 0x%x", base->RCR5);
+	LOG_ERR("TCR5: 0x%x", base->TCR5);
+	LOG_ERR("RCR5: 0x%x", base->RCR5);
 
-	LOG_DBG("TMR: 0x%x", base->TMR);
-	LOG_DBG("RMR: 0x%x", base->RMR);
+	LOG_ERR("TMR: 0x%x", base->TMR);
+	LOG_ERR("RMR: 0x%x", base->RMR);
 
 #ifdef CONFIG_SAI_HAS_MCLK_CONFIG_OPTION
-	LOG_DBG("MCR: 0x%x", base->MCR);
+	LOG_ERR("MCR: 0x%x", base->MCR);
 #endif /* CONFIG_SAI_HAS_MCLK_CONFIG_OPTION */
 }
 

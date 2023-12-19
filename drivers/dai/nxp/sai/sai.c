@@ -302,8 +302,10 @@ static int sai_config_set(const struct device *dev,
 	case DAI_CBC_CFC:
 		tx_config->masterSlave = kSAI_Master;
 		break;
-	case DAI_CBC_CFP:
 	case DAI_CBP_CFC:
+		tx_config->masterSlave = kSAI_Bclk_Slave_FrameSync_Master;
+		break;
+	case DAI_CBC_CFP:
 		LOG_ERR("unsupported provider configuration: %d",
 			cfg->format & DAI_FORMAT_CLOCK_PROVIDER_MASK);
 		return -ENOTSUP;
@@ -433,7 +435,7 @@ static int sai_config_set(const struct device *dev,
 	 * which, in turn, leads to the DAI ending up with 0 channels,
 	 * thus resulting in an error)
 	 */
-	data->cfg.channels = bespoke->tdm_slots;
+	data->cfg.channels = 0;
 
 	sai_dump_register_data(data->regmap);
 
@@ -593,6 +595,7 @@ static int sai_trigger_stop(const struct device *dev,
 		return ret;
 	}
 
+	sai_dump_register_data(data->regmap);
 	LOG_DBG("stop on direction %d", dir);
 
 	if (old_state == DAI_STATE_PAUSED) {
@@ -621,6 +624,7 @@ out_dline_disable:
 	/* disable error interrupt */
 	SAI_TX_RX_ENABLE_DISABLE_IRQ(dir, data->regmap,
 				     kSAI_FIFOErrorInterruptEnable, false);
+
 
 	return 0;
 }
@@ -730,6 +734,11 @@ static int sai_trigger_start(const struct device *dev,
 				     kSAI_FIFOErrorInterruptEnable, true);
 
 	/* TODO: is there a need to write some words to the FIFO to avoid starvation? */
+	if (dir == DAI_DIR_TX) {
+		for (int i = 0; i < 8; i++) {
+			SAI_WriteData(UINT_TO_I2S(data->regmap), 0, 0x0);
+		}
+	}
 
 	/* TODO: for now, only DMA mode is supported */
 	SAI_TX_RX_DMA_ENABLE_DISABLE(dir, data->regmap, true);
@@ -747,6 +756,8 @@ out_enable_tx_rx:
 
 	/* update the software state of TX/RX */
 	sai_tx_rx_sw_enable_disable(dir, data, true);
+
+	sai_dump_register_data(data->regmap);
 
 	return 0;
 }
@@ -795,6 +806,18 @@ static int sai_remove(const struct device *dev)
 	return 0;
 }
 
+static void sai_set_channels(const struct device *dev, uint32_t channels, enum dai_dir dir)
+{
+	struct sai_data *data;
+	I2S_Type *base;
+
+	data = dev->data;
+	base = UINT_TO_I2S(data->regmap);
+
+	base->TMR = ~GENMASK(channels - 1, 0);
+	base->RMR = ~GENMASK(channels - 1, 0);
+}
+
 static const struct dai_driver_api sai_api = {
 	.config_set = sai_config_set,
 	.config_get = sai_config_get,
@@ -802,6 +825,7 @@ static const struct dai_driver_api sai_api = {
 	.get_properties = sai_get_properties,
 	.probe = sai_probe,
 	.remove = sai_remove,
+	.set_channels = sai_set_channels,
 };
 
 static int sai_init(const struct device *dev)

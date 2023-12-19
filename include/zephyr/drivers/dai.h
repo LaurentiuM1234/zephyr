@@ -326,11 +326,21 @@ __subsystem struct dai_driver_api {
 	int (*ts_stop)(const struct device *dev, struct dai_ts_cfg *cfg);
 	int (*ts_get)(const struct device *dev, struct dai_ts_cfg *cfg,
 		      struct dai_ts_data *tsd);
+	void (*set_channels)(const struct device *dev,
+			     uint32_t channels, enum dai_dir dir);
 };
 
 /**
  * @endcond
  */
+
+static inline void dai_set_channels(const struct device *dev,
+				    uint32_t channels, enum dai_dir dir)
+{
+	const struct dai_driver_api *api = (const struct dai_driver_api *)dev->api;
+
+	return api->set_channels(dev, channels, dir);
+}
 
 /**
  * @brief Probe operation of DAI driver.
