@@ -1,0 +1,7 @@
+# Copyright 2024 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_MIMX93_EVK_CM33
+	bool "NXP i.MX93 EVK"
+	depends on SOC_SERIES_MIMX93_CM33
+	select SOC_PART_NUMBER_MIMX9352CVUXK

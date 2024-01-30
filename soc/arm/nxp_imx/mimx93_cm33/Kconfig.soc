@@ -1,0 +1,26 @@
+# Copyright 2024 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+choice
+	prompt "NXP i.MX93 CM33 Selection"
+	depends on SOC_SERIES_MIMX93_CM33
+
+	config SOC_MIMX93_CM33
+		bool "NXP i.MX93 CM33"
+		select HAS_MCUX
+endchoice
+
+if SOC_MIMX93_CM33
+
+config SOC_PART_NUMBER_MIMX9352CVUXK
+	bool
+
+config SOC_PART_NUMBER_MIMX9352DVUXM
+	bool
+
+config SOC_PART_NUMBER_MIMX93_CM33
+	string
+	default "MIMX9352CVUXK_cm33" if  SOC_PART_NUMBER_MIMX9352CVUXK
+	default "MIMX9352DVUXM_cm33" if  SOC_PART_NUMBER_MIMX9352DVUXM
+
+endif # SOC_MIMX93_CM33

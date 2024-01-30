@@ -136,7 +136,7 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 	default:
 		return -EINVAL;
 	}
-#ifdef CONFIG_SOC_MIMX93_A55
+#if defined(CONFIG_SOC_MIMX93_A55) || defined(CONFIG_SOC_MIMX93_CM33)
 	*rate = CLOCK_GetIpFreq(clock_root);
 #else
 	*rate = CLOCK_GetRootClockFreq(clock_root);

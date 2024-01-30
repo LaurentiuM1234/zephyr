@@ -1,0 +1,9 @@
+# Copyright 2024 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_MIMX93_EVK_CM33
+
+config BOARD
+	default "mimx93_evk_cm33"
+
+endif # BOARD_MIMX93_EVK_CM33

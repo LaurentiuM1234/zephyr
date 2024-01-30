@@ -1,0 +1,62 @@
+/*
+ * Copyright 2024 NXP
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <arm/armv8-m.dtsi>
+#include <mem.h>
+#include <zephyr/dt-bindings/clock/imx_ccm_rev2.h>
+
+/{
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-m33";
+			reg = <0>;
+
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			mpu: mpu@e000ed90 {
+				compatible = "arm,armv8m-mpu";
+				reg = <0xe000ed90 0x40>;
+			};
+		};
+
+	};
+
+	soc {
+		iomuxc: pinctrl@443c0000 {
+			compatible = "nxp,imx-iomuxc";
+			reg = <0x443c0000 DT_SIZE_K(64)>;
+			status = "okay";
+			pinctrl: pinctrl {
+				status = "okay";
+				compatible = "nxp,imx93-pinctrl";
+			};
+		};
+
+		ccm: clock-controller@44450000 {
+			compatible = "nxp,imx-ccm-rev2";
+			reg = <0x44450000 DT_SIZE_K(64)>;
+			#clock-cells = <3>;
+		};
+
+		lpuart2: serial@44390000 {
+			compatible = "nxp,imx-lpuart", "nxp,kinetis-lpuart";
+			reg = <0x44390000 DT_SIZE_K(64)>;
+			interrupts = <20 0>;
+			clocks = <&ccm IMX_CCM_LPUART2_CLK 0x0 0x0>;
+			status = "disabled";
+		};
+	};
+};
+
+&nvic {
+	/* TODO: HAL says 3 bits, while TRM says 4 */
+	arm,num-irq-priority-bits = <3>;
+};

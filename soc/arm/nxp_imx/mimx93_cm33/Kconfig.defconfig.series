@@ -1,0 +1,12 @@
+# Copyright 2024 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+if SOC_SERIES_MIMX93_CM33
+
+# TODO: fix this
+config SOC_SERIES
+	default "mimx93_cm33"
+
+source "soc/arm/nxp_imx/mimx93_cm33/Kconfig.defconfig.mimx93*"
+
+endif # SOC_SERIES_MIMX93_CM33

@@ -1,0 +1,29 @@
+# Copyright 2024 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+if SOC_MIMX93_CM33
+
+config SOC
+	default "mimx9352_cm33"
+
+# TODO: what's this for?
+config FLASH_SIZE
+	default $(dt_chosen_reg_size_int,$(DT_CHOSEN_Z_FLASH),0,K)
+
+config FLASH_BASE_ADDRESS
+	default $(dt_chosen_reg_addr_hex,$(DT_CHOSEN_Z_FLASH))
+
+config NUM_IRQS
+	int
+	default 240
+
+# TODO: set this to the actual value
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	int
+	default 200000000
+
+config PINCTRL_IMX
+	default y
+	depends on PINCTRL
+
+endif # SOC_MIMX93_CM33
