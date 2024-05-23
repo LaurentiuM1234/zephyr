@@ -28,6 +28,39 @@
 		};
 	};
 
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		scmi_res0: memory@44611000 {
+			compatible = "arm,scmi-shmem";
+			reg = <0x44611000 0x80>;
+		};
+
+		scmi_res1: memory@44611080 {
+			compatible = "arm,scmi-shmem";
+			reg = <0x44611080 0x80>;
+		};
+	};
+
+	firmware {
+		scmi_dev: scmi {
+			compatible = "arm,scmi";
+			shmem = <&scmi_res0>, <&scmi_res1>;
+			mboxes = <&mu5 0>, <&mu5 1>;
+			mbox-names = "a2p", "p2a";
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			protocol@12 {
+				compatible = "arm,scmi-clock";
+				reg = <0x12>;
+				#clock-cells = <1>;
+			};
+		};
+	};
+
 	soc {
 		itcm: memory@0 {
 			/* TODO: is there a need to add compatible here? */
@@ -43,6 +76,13 @@
 			compatible = "nxp,kinetis-lpuart";
 			reg = <0x42570000 DT_SIZE_K(64)>;
 			interrupts = <64 240>;
+		};
+
+		mu5: mailbox@44610000 {
+			compatible = "nxp,mbox-imx-mu";
+			reg = <0x44610000 DT_SIZE_K(4)>;
+			interrupts = <205 0>;
+			#mbox-cells = <1>;
 		};
 	};
 };

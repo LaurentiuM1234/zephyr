@@ -1,0 +1,12 @@
+# Copyright 2024 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+if ARM_SCMI
+
+config ARM_SCMI_SHMEM_INIT_PRIORITY
+	int "TODO"
+	default 1
+	help
+	  TODO
+
+endif # ARM_SCMI

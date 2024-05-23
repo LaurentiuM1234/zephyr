@@ -1,0 +1,16 @@
+# Copyright 2024 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+menu "Firmware drivers"
+
+config ARM_SCMI
+	bool "TODO"
+	default y
+	depends on ARM || ARM64
+	depends on DT_HAS_ARM_SCMI_ENABLED
+	help
+	  TODO
+
+source "drivers/firmware/scmi/Kconfig"
+
+endmenu
