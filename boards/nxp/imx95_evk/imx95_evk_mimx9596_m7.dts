@@ -1,0 +1,22 @@
+/*
+ * Copyright 2024 NXP
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <nxp/nxp_imx95.dtsi>
+
+/ {
+	model = "NXP i.MX95 EVK";
+	compatible = "nxp";
+
+	chosen {
+		zephyr,sram = &dram;
+	};
+
+	dram: memory@80000000 {
+		reg = <0x80000000 DT_SIZE_K(256)>;
+	};
+};

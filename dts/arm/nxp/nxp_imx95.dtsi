@@ -1,0 +1,52 @@
+/*
+ * Copyright 2024 NXP
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <arm/armv7-m.dtsi>
+#include <mem.h>
+
+/ {
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		M7_0: cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-m7";
+			reg = <0>;
+
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			mpu: mpu@e000ed90 {
+				compatible = "arm,armv7m-mpu";
+				/* TODO: size needs double checking */
+				reg = <0xe000ed90 0x40>;
+			};
+		};
+	};
+
+	soc {
+		itcm: memory@0 {
+			/* TODO: is there a need to add compatible here? */
+			reg = <0x0 DT_SIZE_K(256)>;
+		};
+
+		dtcm: memory@20000000 {
+			/* TODO: is there a need to add compatible here? */
+			reg = <0x20000000 DT_SIZE_K(256)>;
+		};
+
+		lpuart3: uart@42570000 {
+			compatible = "nxp,kinetis-lpuart";
+			reg = <0x42570000 DT_SIZE_K(64)>;
+			interrupts = <64 240>;
+		};
+	};
+};
+
+&nvic {
+	arm,num-irq-priority-bits = <4>;
+};

@@ -1,0 +1,6 @@
+# Copyright 2024 NXP
+
+identifier: imx95_evk/mimx9596/m7
+name: NXP i.MX95 EVK M7
+type: mcu
+arch: arm
