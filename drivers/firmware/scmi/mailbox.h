@@ -41,13 +41,6 @@ LOG_MODULE_REGISTER(arm_scmi_mailbox);
 #define TO_TX_CHAN(scmi_chan) ((struct scmi_tx_channel *)scmi_chan)
 #define TO_RX_CHAN(scmi_chan) ((struct scmi_rx_channel *)scmi_chan)
 
-struct scmi_channel {
-	const struct device *dev;
-	const struct device *shmem;
-	int type;
-	bool valid;
-};
-
 struct scmi_tx_channel {
 	struct scmi_channel header;
 	struct mbox_dt_spec a2p;

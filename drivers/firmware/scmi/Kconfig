@@ -9,4 +9,22 @@ config ARM_SCMI_SHMEM_INIT_PRIORITY
 	help
 	  TODO
 
+config ARM_SCMI_TRANSPORT_INIT_PRIORITY
+	int "TODO"
+	default 5
+	help
+	  TODO
+
+config ARM_SCMI_CORE_INIT_PRIORITY
+	int "TODO"
+	default 6
+	help
+	  TODO
+
+config ARM_SCMI_CORE_HEAP_SIZE
+	int "TODO"
+	default 1024
+	help
+	  TODO
+
 endif # ARM_SCMI

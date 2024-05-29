@@ -9,7 +9,15 @@
 
 #include <zephyr/device.h>
 
+#define SCMI_PROTOCOL_ID(msg) ((GENMASK(17, 10) & (msg)->hdr) >> 10)
+
+struct scmi_protocol {
+	int id;
+	struct k_event event;
+};
+
 struct scmi_message {
+	struct rbnode node;
 	uint32_t length;
 	uint32_t hdr;
 	void *data;

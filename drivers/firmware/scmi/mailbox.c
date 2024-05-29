@@ -7,65 +7,8 @@
 #include <zephyr/kernel.h>
 #include "mailbox.h"
 
-static int scmi_mailbox_send_message(const struct device *dev,
-				     struct scmi_message *msg,
-				     struct scmi_message *reply)
-{
-	const struct scmi_mailbox_config *cfg;
-	struct scmi_mailbox_data *data;
-	int ret;
-
-	cfg = dev->config;
-	data = dev->data;
-
-
-	if (k_is_pre_kernel()) {
-		/* TODO: add support for this */
-		return -ENOTSUP;
-	}
-
-	/* IMPORTANT: the only way the channel could be busy would be
-	 * in the case of ASYNC messages. Since there's no SMP and no
-	 * ASYNC API in PRE-KERNEL that means there's no way the channel
-	 * could be busy.
-	 */
-	__ASSERT(!scmi_shmem_is_busy(SCMI_TRANSPORT_CHAN_SHMEM(cfg, 1)),
-		 "TX channel busy in PRE_KERNEL");
-
-	data->waiting_reply = true;
-
-	ret = scmi_shmem_write_message(SCMI_TRANSPORT_CHAN_SHMEM(cfg, 1), msg);
-	if (ret) {
-		LOG_ERR("failed to write message to shmem");
-		return ret;
-	}
-
-	/* send platform notification */
-	ret = mbox_send_dt(&cfg->a2p, NULL);
-	if (ret) {
-		LOG_ERR("failed to ring platform doorbell");
-		return ret;
-	}
-
-	/* TODO: is there really no better way of doing this PRE_KERNEL stage? */
-	while (data->waiting_reply);
-
-	data->waiting_reply = false;
-
-	/* get platform reply */
-	ret = scmi_shmem_read_message(SCMI_TRANSPORT_CHAN_SHMEM(cfg, 1), reply);
-	if (ret) {
-		LOG_ERR("failed to read message from shmem");
-		return ret;
-	}
-
-	/* TODO: do we need to check channel error status? */
-
-	return 0;
-}
-
-static int _scmi_mailbox_send_message(struct scmi_channel *chan,
-				      struct scmi_message *msg)
+static int scmi_mailbox_send_message(struct scmi_channel *chan,
+				     struct scmi_message *msg)
 {
 	int ret;
 
@@ -187,7 +130,7 @@ static int scmi_mailbox_request_channel(const struct device *dev, int type,
 }
 
 static struct scmi_transport_api scmi_mailbox_api = {
-	.send_message = _scmi_mailbox_send_message,
+	.send_message = scmi_mailbox_send_message,
 	.request_channel = scmi_mailbox_request_channel,
 };
 
@@ -198,7 +141,6 @@ static int scmi_mailbox_init(const struct device *dev)
 
 	cfg = dev->config;
 	data = dev->data;
-
 
 	return 0;
 }
@@ -254,7 +196,8 @@ static struct scmi_mailbox_data data_##inst = {				\
 };									\
 									\
 DEVICE_DT_INST_DEFINE(inst, &scmi_mailbox_init, NULL,			\
-		      &data_##inst, &config_##inst, POST_KERNEL, 41,	\
+		      &data_##inst, &config_##inst, POST_KERNEL,	\
+		      CONFIG_ARM_SCMI_TRANSPORT_INIT_PRIORITY,		\
 		      &scmi_mailbox_api);				\
 
 DT_INST_FOREACH_STATUS_OKAY(SCMI_MAILBOX_INIT);

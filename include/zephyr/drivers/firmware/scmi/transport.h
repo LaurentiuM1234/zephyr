@@ -42,13 +42,32 @@ struct scmi_transport {
 	const struct device *rx_shmem;
 };
 
-struct scmi_channel;
+struct scmi_channel {
+	const struct device *dev;
+	const struct device *shmem;
+	struct k_work work;
+	int type;
+};
 
 struct scmi_transport_api {
 	int (*request_channel)(const struct device *dev, int type,
 			       struct scmi_channel *chan);
 	int (*send_message)(struct scmi_channel *chan, struct scmi_message *msg);
 	int (*send_message_async)(const struct device *dev, void *data);
+	int (*recv_message)(struct scmi_channel *chan, struct scmi_message *msg);
 };
+
+int scmi_transport_recv_message(struct scmi_channel *chan,
+				struct scmi_message *msg)
+{
+	const struct scmi_transport_api *api =
+		(const struct scmi_transport_api *)chan->dev->api;
+
+	if (!api->recv_message) {
+		return -ENOSYS;
+	}
+
+	return api->recv_message(chan, msg);
+}
 
 #endif /* _INCLUDE_ZEPHYR_DRIVERS_FIRMWARE_SCMI_TRANSPORT_H_ */
