@@ -20,6 +20,45 @@ LOG_MODULE_REGISTER(arm_scmi_mailbox);
 		    (MBOX_DT_SPEC_INST_GET(inst, name)),	\
 		    ({ }))
 
+#define SCMI_MAILBOX_TX_CHANNEL(inst)				\
+{								\
+	.header.dev = DEVICE_DT_INST_GET(inst),			\
+	.header.shmem = DT_INST_SCMI_SHMEM_BY_IDX(inst, 0),	\
+	.header.type = SCMI_CHANNEL_TX,				\
+	.a2p = SCMI_MAILBOX_DBELL(inst, a2p),			\
+	.a2p_reply = SCMI_MAILBOX_DBELL(inst, a2p_reply),	\
+}
+
+#define SCMI_MAILBOX_RX_CHANNEL(inst)				\
+{								\
+	.header.dev = DEVICE_DT_INST_GET(inst),			\
+	.header.shmem = DT_INST_SCMI_SHMEM_BY_IDX(inst, 1),	\
+	.header.type = SCMI_CHANNEL_RX,				\
+	.p2a = SCMI_MAILBOX_DBELL(inst, p2a),			\
+}
+
+#define TO_SCMI_CHAN(tx_rx_chan) ((struct scmi_channel *)tx_rx_chan)
+#define TO_TX_CHAN(scmi_chan) ((struct scmi_tx_channel *)scmi_chan)
+#define TO_RX_CHAN(scmi_chan) ((struct scmi_rx_channel *)scmi_chan)
+
+struct scmi_channel {
+	const struct device *dev;
+	const struct device *shmem;
+	int type;
+	bool valid;
+};
+
+struct scmi_tx_channel {
+	struct scmi_channel header;
+	struct mbox_dt_spec a2p;
+	struct mbox_dt_spec a2p_reply;
+};
+
+struct scmi_rx_channel {
+	struct scmi_channel header;
+	struct mbox_dt_spec p2a;
+};
+
 struct scmi_mailbox_config {
 	SCMI_TRANSPORT_SHMEM_INFO;
 	struct mbox_dt_spec a2p;
@@ -31,6 +70,8 @@ struct scmi_mailbox_data {
 	const struct mbox_dt_spec *a2p_reply;
 	const struct mbox_dt_spec *p2a_notification;
 	volatile bool waiting_reply;
+	struct scmi_tx_channel tx;
+	struct scmi_rx_channel rx;
 };
 
 static void scmi_mailbox_rx(const struct device *mbox_dev,
@@ -52,16 +93,20 @@ static inline int scmi_mailbox_dbell_count(const struct device *dev)
 	return num;
 }
 
-static inline int scmi_mailbox_dbell_prepare(const struct device *dev,
-					     struct mbox_dt_spec *dbell)
+static inline int scmi_mailbox_dbell_prepare(struct mbox_dt_spec *dbell, void *cb_data)
 {
-	int ret = mbox_set_enabled_dt(dbell, true);
+	int ret;
+
+	if (!dbell)
+		return 0;
+
+	ret = mbox_set_enabled_dt(dbell, true);
 	if (ret < 0) {
 		LOG_ERR("failed to enable channel %d", dbell->channel_id);
 		return ret;
 	}
 
-	return mbox_register_callback_dt(dbell, scmi_mailbox_rx, (void *)dev);
+	return mbox_register_callback_dt(dbell, scmi_mailbox_rx, cb_data);
 }
 
 static inline int scmi_mailbox_get_chan_dbells(const struct device *dev,

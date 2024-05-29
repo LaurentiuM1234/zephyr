@@ -32,15 +32,22 @@
 #define SCMI_TRANSPORT_DBELL_NUM(inst)\
 	DT_INST_PROP_LEN(inst, mboxes)
 
+enum scmi_channel_type {
+	SCMI_CHANNEL_TX = 0x0,
+	SCMI_CHANNEL_RX = 0x1
+};
+
 struct scmi_transport {
 	const struct device *tx_shmem;
 	const struct device *rx_shmem;
 };
 
+struct scmi_channel;
+
 struct scmi_transport_api {
-	int (*send_message)(const struct device *dev,
-			    struct scmi_message *msg,
-			    struct scmi_message *reply);
+	int (*request_channel)(const struct device *dev, int type,
+			       struct scmi_channel *chan);
+	int (*send_message)(struct scmi_channel *chan, struct scmi_message *msg);
 	int (*send_message_async)(const struct device *dev, void *data);
 };
 

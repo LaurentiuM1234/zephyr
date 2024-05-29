@@ -64,141 +64,141 @@ static int scmi_mailbox_send_message(const struct device *dev,
 	return 0;
 }
 
-static void scmi_mailbox_rx(const struct device *mbox_dev,
-			    mbox_channel_id_t chan,
-			    void *user_data, struct mbox_msg *data)
+static int _scmi_mailbox_send_message(struct scmi_channel *chan,
+				      struct scmi_message *msg)
 {
-	const struct device *scmi_dev;
-	const struct scmi_mailbox_config *scmi_cfg;
-	struct scmi_mailbox_data *scmi_data;
+	int ret;
 
-	scmi_dev = user_data;
-	scmi_cfg = scmi_dev->config;
-	scmi_data = scmi_dev->data;
-
-	if (chan == scmi_data->a2p_reply->channel_id) {
-		scmi_data->waiting_reply = false;
-
-		/* TODO: do we really need this? */
-		compiler_barrier();
-
-		return;
-	}
-
-	if (scmi_data->p2a_notification &&
-	    chan == scmi_data->p2a_notification->channel_id) {
-		/* TODO: platform notification */
-		return;
-	}
-
-	LOG_ERR("dbell %d rang unexpectedly", chan);
-}
-
-static int scmi_mailbox_validate_configuration(const struct device *dev,
-					       int shmem_num, int dbell_num)
-{
-	const struct scmi_mailbox_config *cfg = dev->config;
-
-	if (dbell_num == 1 && shmem_num == 1) {
-		return 0;
-	} else if (dbell_num == 2 && shmem_num == 2) {
-		if (cfg->a2p_reply.dev || !cfg->a2p.dev || !cfg->p2a.dev) {
-			return -EINVAL;
-		}
-	} else if (dbell_num == 2 && shmem_num == 1) {
-		if (cfg->p2a.dev || !cfg->a2p.dev || !cfg->a2p_reply.dev) {
-			return -EINVAL;
-		}
-	} else if (dbell_num == 3 && shmem_num == 2) {
-		if (!cfg->a2p.dev || !cfg->a2p_reply.dev || !cfg->p2a.dev) {
-			return -EINVAL;
-		}
-	} else {
+	if (chan->type != SCMI_CHANNEL_TX) {
 		return -EINVAL;
+	}
+
+	/* TODO: should check if channel is busy */
+
+	ret = scmi_shmem_write_message(chan->shmem, msg);
+	if (ret < 0) {
+		LOG_ERR("failed to write message to shmem");
+		return ret;
+	}
+
+	ret = mbox_send_dt(&TO_TX_CHAN(chan)->a2p, NULL);
+	if (ret < 0) {
+		LOG_ERR("failed to ring doorbell");
+		return ret;
 	}
 
 	return 0;
 }
 
-static int scmi_mailbox_channel_prepare(const struct device *dev,
-					int shmem_num, int dbell_num, bool tx)
+static void scmi_mailbox_rx(const struct device *mbox_dev,
+			    mbox_channel_id_t mbox_chan,
+			    void *user_data, struct mbox_msg *data)
 {
-	const struct scmi_mailbox_config *cfg;
-	struct scmi_mailbox_data *data;
-	struct mbox_dt_spec *a2p_reply, *p2a_notification;
+	struct scmi_channel *chan = user_data;
+}
+
+static int scmi_mailbox_prepare_channel(struct scmi_channel *chan)
+{
 	int ret;
+	struct mbox_dt_spec *a2p, *a2p_reply, *p2a;
 
-	cfg = dev->config;
-	data = dev->data;
+	a2p = NULL;
 	a2p_reply = NULL;
-	p2a_notification = NULL;
+	p2a = NULL;
 
-	ret = scmi_mailbox_get_chan_dbells(dev, shmem_num, dbell_num,
-					   a2p_reply, p2a_notification);
+	switch (chan->type) {
+	case SCMI_CHANNEL_TX:
+		if (TO_TX_CHAN(chan)->a2p.dev) {
+			a2p = &TO_TX_CHAN(chan)->a2p;
+		}
+
+		if (TO_TX_CHAN(chan)->a2p_reply.dev) {
+			a2p_reply = &TO_TX_CHAN(chan)->a2p_reply;
+		}
+	case SCMI_CHANNEL_RX:
+		if (TO_RX_CHAN(chan)->p2a.dev) {
+			p2a = &TO_RX_CHAN(chan)->p2a;
+		}
+	default:
+		return -EINVAL;
+	}
+
+	ret = scmi_mailbox_dbell_prepare(a2p, chan);
 	if (ret < 0) {
 		return ret;
 	}
 
-	data->a2p_reply = a2p_reply;
-	data->p2a_notification = p2a_notification;
+	ret = scmi_mailbox_dbell_prepare(a2p_reply, chan);
+	if (ret < 0) {
+		return ret;
+	}
 
-	if (tx) {
-		/* TX channel is mandatory */
-		if (!a2p_reply) {
-			return -EINVAL;
+	ret = scmi_mailbox_dbell_prepare(p2a, chan);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return 0;
+}
+
+static int scmi_mailbox_request_channel(const struct device *dev, int type,
+					struct scmi_channel *chan)
+{
+	struct scmi_mailbox_data *data;
+	int ret;
+
+	data = dev->data;
+
+	if (type != SCMI_CHANNEL_TX || type != SCMI_CHANNEL_RX) {
+		return -EINVAL;
+	}
+
+	if (type == SCMI_CHANNEL_TX) {
+		if (data->tx.header.valid) {
+			chan = TO_SCMI_CHAN(&data->tx);
+			return 0;
 		}
 
-		ret = scmi_mailbox_dbell_prepare(dev, a2p_reply);
-		if (ret) {
+		ret = scmi_mailbox_prepare_channel(TO_SCMI_CHAN(&data->tx));
+		if (ret < 0) {
 			return ret;
 		}
 
-		scmi_shmem_update_channel_flags(SCMI_TRANSPORT_CHAN_SHMEM(cfg, tx),
-						SCMI_SHMEM_CHANNEL_FLAG_INT_EN_MASK, 0);
+		chan = TO_SCMI_CHAN(&data->tx);
 	} else {
-		/* RX channel is optional */
-		if (p2a_notification) {
-			ret = scmi_mailbox_dbell_prepare(dev, p2a_notification);
-			if (ret) {
-				return ret;
-			}
+		if (!data->rx.p2a.dev) {
+			return -ENODEV;
 		}
+
+		if (data->rx.header.valid) {
+			chan = TO_SCMI_CHAN(&data->rx);
+			return 0;
+		}
+
+		ret = scmi_mailbox_prepare_channel(TO_SCMI_CHAN(&data->rx));
+		if (ret < 0) {
+			return ret;
+		}
+
+		chan = TO_SCMI_CHAN(&data->rx);
 	}
 
 	return 0;
 }
 
 static struct scmi_transport_api scmi_mailbox_api = {
-	.send_message = scmi_mailbox_send_message,
+	.send_message = _scmi_mailbox_send_message,
+	.request_channel = scmi_mailbox_request_channel,
 };
 
 static int scmi_mailbox_init(const struct device *dev)
 {
 	const struct scmi_mailbox_config *cfg;
 	struct scmi_mailbox_data *data;
-	int ret, shmem_num, dbell_num;
 
 	cfg = dev->config;
 	data = dev->data;
-	shmem_num = SCMI_TRANSPORT_CHAN_SHMEM(cfg, 0) == NULL ? 1 : 2;
-	dbell_num = scmi_mailbox_dbell_count(dev);
 
-	ret = scmi_mailbox_validate_configuration(dev, shmem_num, dbell_num);
-	if (ret < 0) {
-		return ret;
-	}
-
-	ret = scmi_mailbox_channel_prepare(dev, shmem_num, dbell_num, true);
-	if (ret < 0) {
-		return ret;
-	}
-
-	if (SCMI_TRANSPORT_CHAN_SHMEM(cfg, 0)) {
-		ret = scmi_mailbox_channel_prepare(dev, shmem_num, dbell_num, false);
-		if (ret < 0) {
-			return ret;
-		}
-	}
 
 	return 0;
 }
@@ -228,16 +228,30 @@ BUILD_ASSERT((SCMI_TRANSPORT_SHMEM_NUM(inst) == 1 &&			\
 	     "bad mbox and shmem count");				\
 									\
 BUILD_ASSERT(DT_INST_PROP_HAS_NAME(inst, mboxes, a2p),			\
-	     "A2P mbox is mandatory");					\
+	     "A2P dbell is mandatory");					\
 									\
-static struct scmi_mailbox_config config_##inst = {			\
-	SCMI_TRANSPORT_PROLOGUE(inst),					\
-	.a2p = SCMI_MAILBOX_DBELL(inst, a2p),				\
-	.a2p_reply = SCMI_MAILBOX_DBELL(inst, a2p_reply),		\
-	.p2a = SCMI_MAILBOX_DBELL(inst, p2a),				\
+BUILD_ASSERT(SCMI_TRANSPORT_SHMEM_NUM(inst) != 2 ||			\
+	     SCMI_TRANSPORT_DBELL_NUM(inst) != 2 ||			\
+	     DT_INST_PROP_HAS_NAME(inst, mboxes, p2a),			\
+	     "no P2A dbell in bidirectional TX/RX configuration");	\
+									\
+BUILD_ASSERT(SCMI_TRANSPORT_SHMEM_NUM(inst) != 1 ||			\
+	     SCMI_TRANSPORT_DBELL_NUM(inst) != 2 ||			\
+	     DT_INST_PROP_HAS_NAME(inst, mboxes, a2p_reply),		\
+	     "no A2P reply dbell in unidirectional TX configuration");	\
+									\
+BUILD_ASSERT(SCMI_TRANSPORT_SHMEM_NUM(inst) != 2 ||			\
+	     SCMI_TRANSPORT_DBELL_NUM(inst) != 3 ||			\
+	     (DT_INST_PROP_HAS_NAME(inst, mboxes, p2a) &&		\
+	     DT_INST_PROP_HAS_NAME(inst, mboxes, a2p_reply)),		\
+	     "no P2A / A2P reply dbell in unidirectional TX/RX configuration");\
+									\
+static struct scmi_mailbox_config config_##inst;			\
+									\
+static struct scmi_mailbox_data data_##inst = {				\
+	.tx = SCMI_MAILBOX_TX_CHANNEL(inst),				\
+	.rx = SCMI_MAILBOX_RX_CHANNEL(inst),				\
 };									\
-									\
-static struct scmi_mailbox_data data_##inst;				\
 									\
 DEVICE_DT_INST_DEFINE(inst, &scmi_mailbox_init, NULL,			\
 		      &data_##inst, &config_##inst, POST_KERNEL, 41,	\
