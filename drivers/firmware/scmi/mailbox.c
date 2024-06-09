@@ -4,200 +4,78 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 #include "mailbox.h"
 
-static int scmi_mailbox_send_message(struct scmi_channel *chan,
-				     struct scmi_message *msg)
+LOG_MODULE_REGISTER(scmi_mbox);
+
+static void scmi_mbox_cb(const struct device *mbox,
+			 mbox_channel_id_t channel_id,
+			 void *user_data,
+			 struct mbox_msg *data)
 {
-	int ret;
+	struct scmi_channel *scmi_chan = user_data;
 
-	if (chan->type != SCMI_CHANNEL_TX) {
-		return -EINVAL;
-	}
-
-	/* TODO: should check if channel is busy */
-
-	ret = scmi_shmem_write_message(chan->shmem, msg);
-	if (ret < 0) {
-		LOG_ERR("failed to write message to shmem");
-		return ret;
-	}
-
-	ret = mbox_send_dt(&TO_TX_CHAN(chan)->a2p, NULL);
-	if (ret < 0) {
-		LOG_ERR("failed to ring doorbell");
-		return ret;
-	}
-
-	return 0;
+	if (scmi_chan->cb)
+		scmi_chan->cb(scmi_chan);
 }
 
-static void scmi_mailbox_rx(const struct device *mbox_dev,
-			    mbox_channel_id_t mbox_chan,
-			    void *user_data, struct mbox_msg *data)
-{
-	struct scmi_channel *chan = user_data;
-}
-
-static int scmi_mailbox_prepare_channel(struct scmi_channel *chan)
+static int scmi_mbox_setup_chan(const struct device *transport,
+				struct scmi_channel *chan,
+				bool tx)
 {
 	int ret;
-	struct mbox_dt_spec *a2p, *a2p_reply, *p2a;
+	struct scmi_mbox_channel *mbox_chan = chan->priv;
 
-	a2p = NULL;
-	a2p_reply = NULL;
-	p2a = NULL;
+	if (tx) {
+		if (mbox_chan->a2p_reply.dev) {
+			ret = mbox_register_callback_dt(&mbox_chan->a2p_reply,
+							scmi_mbox_cb, chan);
+			if (ret < 0) {
+				LOG_ERR("failed to register a2p reply cb");
+				return ret;
+			}
 
-	switch (chan->type) {
-	case SCMI_CHANNEL_TX:
-		if (TO_TX_CHAN(chan)->a2p.dev) {
-			a2p = &TO_TX_CHAN(chan)->a2p;
+			ret = mbox_set_enabled_dt(&mbox_chan->a2p_reply, true);
+			if (ret < 0) {
+				LOG_ERR("failed to enable a2p reply dbell");
+				return ret;
+			}
 		}
 
-		if (TO_TX_CHAN(chan)->a2p_reply.dev) {
-			a2p_reply = &TO_TX_CHAN(chan)->a2p_reply;
-		}
-	case SCMI_CHANNEL_RX:
-		if (TO_RX_CHAN(chan)->p2a.dev) {
-			p2a = &TO_RX_CHAN(chan)->p2a;
-		}
-	default:
-		return -EINVAL;
-	}
-
-	ret = scmi_mailbox_dbell_prepare(a2p, chan);
-	if (ret < 0) {
-		return ret;
-	}
-
-	ret = scmi_mailbox_dbell_prepare(a2p_reply, chan);
-	if (ret < 0) {
-		return ret;
-	}
-
-	ret = scmi_mailbox_dbell_prepare(p2a, chan);
-	if (ret < 0) {
-		return ret;
-	}
-
-	return 0;
-}
-
-static int scmi_mailbox_request_channel(const struct device *dev, int type,
-					struct scmi_channel *chan)
-{
-	struct scmi_mailbox_data *data;
-	int ret;
-
-	data = dev->data;
-
-	if (type != SCMI_CHANNEL_TX || type != SCMI_CHANNEL_RX) {
-		return -EINVAL;
-	}
-
-	if (type == SCMI_CHANNEL_TX) {
-		if (data->tx.header.valid) {
-			chan = TO_SCMI_CHAN(&data->tx);
-			return 0;
-		}
-
-		ret = scmi_mailbox_prepare_channel(TO_SCMI_CHAN(&data->tx));
+		ret = mbox_set_enabled_dt(&mbox_chan->a2p, true);
 		if (ret < 0) {
+			LOG_ERR("failed to enable a2p dbell");
 			return ret;
 		}
-
-		chan = TO_SCMI_CHAN(&data->tx);
 	} else {
-		if (!data->rx.p2a.dev) {
-			return -ENODEV;
+		if (mbox_chan->p2a.dev) {
+			ret = mbox_register_callback_dt(&mbox_chan->p2a,
+							scmi_mbox_cb, chan);
+			if (ret < 0) {
+				LOG_ERR("failed to register p2a cb");
+				return ret;
+			}
+
+			ret = mbox_set_enabled_dt(&mbox_chan->p2a, true);
+			if (ret < 0) {
+				LOG_ERR("failed to enable p2a dbell");
+				return ret;
+			}
 		}
 
-		if (data->rx.header.valid) {
-			chan = TO_SCMI_CHAN(&data->rx);
-			return 0;
-		}
-
-		ret = scmi_mailbox_prepare_channel(TO_SCMI_CHAN(&data->rx));
-		if (ret < 0) {
-			return ret;
-		}
-
-		chan = TO_SCMI_CHAN(&data->rx);
 	}
 
 	return 0;
 }
 
-static struct scmi_transport_api scmi_mailbox_api = {
-	.send_message = scmi_mailbox_send_message,
-	.request_channel = scmi_mailbox_request_channel,
+struct scmi_transport_api scmi_mbox_api = {
+	.setup_chan = scmi_mbox_setup_chan,
 };
 
-static int scmi_mailbox_init(const struct device *dev)
+static int scmi_mbox_init(const struct device *transport)
 {
-	const struct scmi_mailbox_config *cfg;
-	struct scmi_mailbox_data *data;
-
-	cfg = dev->config;
-	data = dev->data;
-
 	return 0;
 }
 
-/* TODO: don't forget to figure out the priority issue. Currently it's
- * hardcoded.
- */
-
-#define SCMI_MAILBOX_INIT(inst)						\
-									\
-BUILD_ASSERT(DT_INST_PROP_LEN(inst, shmem) == 1 ||			\
-	     DT_INST_PROP_LEN(inst, shmem) == 2,			\
-	     "expected 1 or 2 shmem regions");				\
-									\
-BUILD_ASSERT(DT_INST_PROP_LEN(inst, mboxes) >= 1 &&			\
-	     DT_INST_PROP_LEN(inst, mboxes) <= 4,			\
-	     "mbox number should be in [1, 4]");			\
-									\
-BUILD_ASSERT((SCMI_TRANSPORT_SHMEM_NUM(inst) == 1 &&			\
-	     SCMI_TRANSPORT_DBELL_NUM(inst) == 1) ||			\
-	     (SCMI_TRANSPORT_SHMEM_NUM(inst) == 2 &&			\
-	     SCMI_TRANSPORT_DBELL_NUM(inst) == 2) ||			\
-	     (SCMI_TRANSPORT_SHMEM_NUM(inst) == 1 &&			\
-	     SCMI_TRANSPORT_DBELL_NUM(inst) == 2) ||			\
-	     (SCMI_TRANSPORT_SHMEM_NUM(inst) == 2 &&			\
-	     SCMI_TRANSPORT_DBELL_NUM(inst) == 3),			\
-	     "bad mbox and shmem count");				\
-									\
-BUILD_ASSERT(DT_INST_PROP_HAS_NAME(inst, mboxes, a2p),			\
-	     "A2P dbell is mandatory");					\
-									\
-BUILD_ASSERT(SCMI_TRANSPORT_SHMEM_NUM(inst) != 2 ||			\
-	     SCMI_TRANSPORT_DBELL_NUM(inst) != 2 ||			\
-	     DT_INST_PROP_HAS_NAME(inst, mboxes, p2a),			\
-	     "no P2A dbell in bidirectional TX/RX configuration");	\
-									\
-BUILD_ASSERT(SCMI_TRANSPORT_SHMEM_NUM(inst) != 1 ||			\
-	     SCMI_TRANSPORT_DBELL_NUM(inst) != 2 ||			\
-	     DT_INST_PROP_HAS_NAME(inst, mboxes, a2p_reply),		\
-	     "no A2P reply dbell in unidirectional TX configuration");	\
-									\
-BUILD_ASSERT(SCMI_TRANSPORT_SHMEM_NUM(inst) != 2 ||			\
-	     SCMI_TRANSPORT_DBELL_NUM(inst) != 3 ||			\
-	     (DT_INST_PROP_HAS_NAME(inst, mboxes, p2a) &&		\
-	     DT_INST_PROP_HAS_NAME(inst, mboxes, a2p_reply)),		\
-	     "no P2A / A2P reply dbell in unidirectional TX/RX configuration");\
-									\
-static struct scmi_mailbox_config config_##inst;			\
-									\
-static struct scmi_mailbox_data data_##inst = {				\
-	.tx = SCMI_MAILBOX_TX_CHANNEL(inst),				\
-	.rx = SCMI_MAILBOX_RX_CHANNEL(inst),				\
-};									\
-									\
-DEVICE_DT_INST_DEFINE(inst, &scmi_mailbox_init, NULL,			\
-		      &data_##inst, &config_##inst, POST_KERNEL,	\
-		      CONFIG_ARM_SCMI_TRANSPORT_INIT_PRIORITY,		\
-		      &scmi_mailbox_api);				\
-
-DT_INST_FOREACH_STATUS_OKAY(SCMI_MAILBOX_INIT);
+SCMI_MAILBOX_INST_DEFINE(0, &scmi_mbox_init, &scmi_mbox_api);

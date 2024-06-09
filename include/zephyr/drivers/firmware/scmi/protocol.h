@@ -9,18 +9,19 @@
 
 #include <zephyr/device.h>
 
-#define SCMI_PROTOCOL_ID(msg) ((GENMASK(17, 10) & (msg)->hdr) >> 10)
+/* TODO: add node - this needs to be in decimal */
+#define SCMI_PROTOCOL_BASE 16
+
+struct scmi_channel;
 
 struct scmi_protocol {
-	int id;
-	struct k_event event;
+	struct scmi_channel *tx;
+	struct scmi_channel *rx;
+	const struct device *core;
 };
 
 struct scmi_message {
-	struct rbnode node;
-	uint32_t length;
 	uint32_t hdr;
-	void *data;
 };
 
 #endif /* _INCLUDE_ZEPHYR_DRIVERS_FIRMWARE_SCMI_PROTOCOL_H_ */

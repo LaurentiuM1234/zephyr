@@ -8,66 +8,108 @@
 #define _INCLUDE_ZEPHYR_DRIVERS_FIRMWARE_SCMI_TRANSPORT_H_
 
 #include <zephyr/device.h>
-#include <zephyr/drivers/firmware/scmi/shmem.h>
+#include <zephyr/sys/mutex.h>
+#include <zephyr/drivers/firmware/scmi/protocol.h>
 
-#define DT_INST_SCMI_SHMEM_BY_IDX(inst, idx)					\
-	COND_CODE_1(DT_INST_PROP_HAS_IDX(inst, shmem, idx),			\
-		    (DEVICE_DT_GET(DT_INST_PROP_BY_IDX(inst, shmem, idx))),	\
+#ifdef CONFIG_ARM_SCMI
+
+#define _SCMI_TRANSPORT_PROTO_HAS_CHAN(node_id, tx)\
+	DT_PROP_HAS_IDX(node_id, shmem, tx)
+
+#endif /* CONFIG_ARM_SCMI */
+
+#define SCMI_TRANSPORT_CHAN_NAME(proto, tx)\
+	CONCAT(scmi_channel_, proto, _, tx)
+
+#define SCMI_TRANSPORT_CHAN_DECLARE(node_id, proto, tx, transport_priv)	\
+	STRUCT_SECTION_ITERABLE(scmi_channel,				\
+				SCMI_TRANSPORT_CHAN_NAME(proto, tx)) =	\
+	{								\
+		.priv = transport_priv,					\
+	}
+
+#define _SCMI_TRANSPORT_GET_TX_BASE_CHAN(node_id)\
+	(&(SCMI_TRANSPORT_CHAN_NAME(SCMI_PROTOCOL_BASE, 0)))
+
+#define _SCMI_TRANSPORT_GET_RX_BASE_CHAN(node_id)				\
+	COND_CODE_1(_SCMI_TRANSPORT_PROTO_HAS_CHAN(DT_PARENT(node_id), 1),	\
+		    (&(SCMI_TRANSPORT_CHAN_NAME(proto, 1))),			\
 		    (NULL))
 
-#define SCMI_TRANSPORT_PROLOGUE(inst)					\
-	.transport_data.tx_shmem = DT_INST_SCMI_SHMEM_BY_IDX(inst, 0),	\
-	.transport_data.rx_shmem = DT_INST_SCMI_SHMEM_BY_IDX(inst, 1)	\
+#define SCMI_TRANSPORT_GET_TX_CHAN(node_id, proto)			\
+	COND_CODE_1(_SCMI_TRANSPORT_PROTO_HAS_CHAN(node_id, 0),		\
+		    (&(SCMI_TRANSPORT_CHAN_NAME(proto, 0))),		\
+		    (_SCMI_TRANSPORT_GET_TX_BASE_CHAN(node_id)))
 
-#define SCMI_TRANSPORT_SHMEM_INFO\
-	struct scmi_transport transport_data
+#define SCMI_TRANSPORT_GET_RX_CHAN(node_id, proto)			\
+	COND_CODE_1(_SCMI_TRANSPORT_PROTO_HAS_CHAN(node_id, 1),		\
+		    (&(SCMI_TRANSPORT_CHAN_NAME(proto, 1))),		\
+		    (_SCMI_TRANSPORT_GET_RX_BASE_CHAN(node_id)))
 
-#define SCMI_TRANSPORT_CHAN_SHMEM(data, tx)				\
-	((tx) == 1 ? ((struct scmi_transport *)(data))->tx_shmem :	\
-	 ((struct scmi_transport *)(data))->rx_shmem)
+struct scmi_channel;
 
-#define SCMI_TRANSPORT_SHMEM_NUM(inst)\
-	DT_INST_PROP_LEN(inst, shmem)
-
-#define SCMI_TRANSPORT_DBELL_NUM(inst)\
-	DT_INST_PROP_LEN(inst, mboxes)
-
-enum scmi_channel_type {
-	SCMI_CHANNEL_TX = 0x0,
-	SCMI_CHANNEL_RX = 0x1
-};
-
-struct scmi_transport {
-	const struct device *tx_shmem;
-	const struct device *rx_shmem;
-};
+typedef void (*scmi_channel_cb)(struct scmi_channel *chan);
 
 struct scmi_channel {
-	const struct device *dev;
-	const struct device *shmem;
-	struct k_work work;
-	int type;
+	struct k_mutex lock;
+	struct k_sem sem;
+	void *priv;
+	scmi_channel_cb cb;
+	bool ready;
 };
 
 struct scmi_transport_api {
-	int (*request_channel)(const struct device *dev, int type,
-			       struct scmi_channel *chan);
-	int (*send_message)(struct scmi_channel *chan, struct scmi_message *msg);
-	int (*send_message_async)(const struct device *dev, void *data);
-	int (*recv_message)(struct scmi_channel *chan, struct scmi_message *msg);
+	int (*send_message)(const struct device *transport,
+			    struct scmi_channel *chan,
+			    struct scmi_message *msg);
+	int (*setup_chan)(const struct device *transport,
+			  struct scmi_channel *chan,
+			  bool tx);
+	int (*read_message)(const struct device *transport,
+			    struct scmi_channel *chan,
+			    struct scmi_message *msg);
 };
 
-int scmi_transport_recv_message(struct scmi_channel *chan,
-				struct scmi_message *msg)
+static inline int scmi_transport_setup_chan(const struct device *transport,
+					    struct scmi_channel *chan,
+					    bool tx)
 {
 	const struct scmi_transport_api *api =
-		(const struct scmi_transport_api *)chan->dev->api;
+		(const struct scmi_transport_api *)transport->api;
 
-	if (!api->recv_message) {
+	if (!api || !api->setup_chan) {
 		return -ENOSYS;
 	}
 
-	return api->recv_message(chan, msg);
+	return api->setup_chan(transport, chan, tx);
+}
+
+static inline int scmi_transport_send_message(const struct device *transport,
+					      struct scmi_channel *chan,
+					      struct scmi_message *msg)
+{
+	const struct scmi_transport_api *api =
+		(const struct scmi_transport_api *)transport->api;
+
+	if (!api || !api->send_message) {
+		return -ENOSYS;
+	}
+
+	return api->send_message(transport, chan, msg);
+}
+
+static inline int scmi_transport_read_message(const struct device *transport,
+					      struct scmi_channel *chan,
+					      struct scmi_message *msg)
+{
+	const struct scmi_transport_api *api =
+		(const struct scmi_transport_api *)transport->api;
+
+	if (!api || !api->read_message) {
+		return -ENOSYS;
+	}
+
+	return api->read_message(transport, chan, msg);
 }
 
 #endif /* _INCLUDE_ZEPHYR_DRIVERS_FIRMWARE_SCMI_TRANSPORT_H_ */

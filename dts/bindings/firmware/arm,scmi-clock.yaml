@@ -6,3 +6,9 @@ description: System Control and Management Interface (SCMI)
 compatible: "arm,scmi-clock"
 
 include: [base.yaml]
+
+
+properties:
+  shmem:
+    type: phandles
+
