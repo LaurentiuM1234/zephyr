@@ -8,6 +8,63 @@
 #include <zephyr/init.h>
 #include <zephyr/drivers/pinctrl.h>
 
+#ifdef CONFIG_SOC_MIMX9596
+#include <zephyr/drivers/firmware/scmi/pinctrl.h>
+#endif /* CONFIG_SOC_MIMX9596 */
+
+#ifdef CONFIG_SOC_MIMX9596
+static int pinctrl_soc_configure_pin(const pinctrl_soc_pin_t *pin)
+{
+	struct scmi_pinctrl_settings settings[4];
+	int ret, settings_num, i;
+	uint32_t attributes;
+
+	settings_num = 0;
+
+	attributes = SCMI_PINCTRL_CONFIG_ATTRIBUTES(0x0, 0x1, SCMI_PINCTRL_SELECTOR_PIN);
+
+	/* set mux value */
+	settings[0].attributes = attributes;
+	settings[0].id = pin->pinmux.mux_register / 4;
+	settings[0].config[0] = IMX95_TYPE_MUX;
+	settings[0].config[1] = IMX95_CONFIG_HAS_SION(pin->pin_ctrl_flags) ?
+		(pin->pinmux.mux_mode | IMX95_PAD_SION_BIT) :
+		pin->pinmux.mux_mode;
+	settings_num++;
+
+	/* set config value */
+	settings[1].attributes = attributes;
+	settings[1].id = (pin->pinmux.config_register - IMX95_CFG_BASE) / 4;
+	settings[1].config[0] = IMX95_TYPE_CONFIG;
+	settings[1].config[1] = pin->pin_ctrl_flags & ~IMX95_CONFIG_SION_BIT;
+	settings_num++;
+
+	/* set daisy - optional */
+	if (pin->pinmux.input_register) {
+		settings[2].attributes = attributes;
+		settings[2].id = (pin->pinmux.input_register - IMX95_DAISY_BASE) / 4;
+		settings[2].config[0] = IMX95_TYPE_DAISY_ID;
+		settings[2].config[1] = 0x0; /* not relevant */
+		settings_num++;
+
+		settings[3].attributes = attributes;
+		settings[3].id = 0x0; /* not relevant */
+		settings[3].config[0] = IMX95_TYPE_DAISY_CFG;
+		settings[3].config[1] = pin->pinmux.input_daisy;
+		settings_num++;
+	}
+
+	for (i = 0; i < settings_num; i++) {
+		ret = scmi_pinctrl_settings_configure(&settings[i]);
+		if (ret < 0) {
+			return ret;
+		}
+	}
+
+	return 0;
+}
+#endif /* CONFIG_SOC_MIMX9596 */
+
 int pinctrl_configure_pins(const pinctrl_soc_pin_t *pins, uint8_t pin_cnt,
 			   uintptr_t reg)
 {
@@ -60,6 +117,11 @@ int pinctrl_configure_pins(const pinctrl_soc_pin_t *pins, uint8_t pin_cnt,
 
 		if (input_register) {
 			sys_write32(IOMUXC_PSMI_SSS(input_daisy), (mem_addr_t)input_register);
+		}
+#elif defined(CONFIG_SOC_MIMX9596)
+		int ret = pinctrl_soc_configure_pin(&pins[i]);
+		if (ret < 0) {
+			return ret;
 		}
 #else
 		sys_write32(

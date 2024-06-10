@@ -6,6 +6,7 @@
 
 #include <arm/armv7-m.dtsi>
 #include <mem.h>
+#include <zephyr/dt-bindings/clock/imx95-clock.h>
 
 / {
 	cpus {
@@ -53,10 +54,19 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			protocol@12 {
+			scmi_clk: protocol@14 {
 				compatible = "arm,scmi-clock";
-				reg = <0x12>;
+				reg = <0x14>;
 				#clock-cells = <1>;
+			};
+
+			scmi_iomuxc: protocol@19 {
+				compatible = "arm,scmi-pinctrl";
+				reg = <0x19>;
+
+				pinctrl: pinctrl {
+					compatible = "nxp,imx95-pinctrl";
+				};
 			};
 		};
 	};
@@ -75,7 +85,9 @@
 		lpuart3: uart@42570000 {
 			compatible = "nxp,kinetis-lpuart";
 			reg = <0x42570000 DT_SIZE_K(64)>;
+			clocks = <&scmi_clk IMX95_CLK_LPUART3>;
 			interrupts = <64 240>;
+			status = "disabled";
 		};
 
 		mu5: mailbox@44610000 {

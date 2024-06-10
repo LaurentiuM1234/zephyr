@@ -3,7 +3,7 @@
 
 config PINCTRL_IMX
 	bool "Pin controller driver for iMX MCUs"
-	depends on DT_HAS_NXP_IMX_IOMUXC_ENABLED
+	depends on DT_HAS_NXP_IMX_IOMUXC_ENABLED || DT_HAS_ARM_SCMI_PINCTRL_ENABLED
 	depends on HAS_MCUX_IOMUXC || HAS_IMX_IOMUXC
 	default y
 	help

@@ -27,4 +27,16 @@ config ARM_SCMI_CORE_HEAP_SIZE
 	help
 	  TODO
 
+config ARM_SCMI_CLK_HELPERS
+	bool "TODO"
+	default n
+	help
+	  TODO
+
+config ARM_SCMI_PINCTRL_MAX_CONFIG_COUNT
+	int "TODO"
+	default 10
+	help
+	  TODO
+
 endif # ARM_SCMI

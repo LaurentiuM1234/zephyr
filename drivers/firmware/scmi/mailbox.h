@@ -8,13 +8,19 @@
 #define _ZEPHYR_DRIVERS_FIRMWARE_SCMI_MAILBOX_H_
 
 #include <zephyr/drivers/firmware/scmi/transport.h>
+#include <zephyr/drivers/firmware/scmi/shmem.h>
 #include <zephyr/drivers/mbox.h>
 #include <zephyr/kernel.h>
 
 #define DT_DRV_COMPAT arm_scmi
 
-#define _SCMI_MBOX_CHAN_NAME(proto, tx)\
-	CONCAT(SCMI_TRANSPORT_CHAN_NAME(proto, tx), _, priv)
+#define _SCMI_MBOX_SHMEM_BY_IDX(node_id, idx)					\
+	COND_CODE_1(DT_PROP_HAS_IDX(node_id, shmem, idx),			\
+		    (DEVICE_DT_GET(DT_PROP_BY_IDX(node_id, shmem, idx))),	\
+		    (NULL))
+
+#define _SCMI_MBOX_CHAN_NAME(proto, idx)\
+	CONCAT(SCMI_TRANSPORT_CHAN_NAME(proto, idx), _, priv)
 
 #define _SCMI_MBOX_CHAN_DBELL(node_id, name)			\
 	COND_CODE_1(DT_PROP_HAS_NAME(node_id, mboxes, name),	\
@@ -23,34 +29,36 @@
 
 #define _SCMI_MBOX_CHAN_DECLARE_PRIV_TX(node_id, proto)		\
 {								\
+	.shmem = _SCMI_MBOX_SHMEM_BY_IDX(node_id, 0),		\
 	.a2p = MBOX_DT_SPEC_GET(node_id, a2p),			\
 	.a2p_reply = _SCMI_MBOX_CHAN_DBELL(node_id, a2p_reply),	\
 }
 
 #define _SCMI_MBOX_CHAN_DECLARE_PRIV_RX(node_id, proto)	\
 {							\
+	.shmem = _SCMI_MBOX_SHMEM_BY_IDX(node_id, 1),	\
 	.p2a = MBOX_DT_SPEC_GET(node_id, p2a),		\
 }
 
-#define _SCMI_MBOX_CHAN_DECLARE_PRIV_TX_RX(node_id, proto, tx)		\
-	COND_CODE_1(tx,							\
-		    (_SCMI_MBOX_CHAN_DECLARE_PRIV_TX(node_id, proto)),	\
-		    (_SCMI_MBOX_CHAN_DECLARE_PRIV_RX(node_id, proto)))
+#define _SCMI_MBOX_CHAN_DECLARE_PRIV_TX_RX(node_id, proto, idx)		\
+	COND_CODE_1(idx,						\
+		    (_SCMI_MBOX_CHAN_DECLARE_PRIV_RX(node_id, proto)),	\
+		    (_SCMI_MBOX_CHAN_DECLARE_PRIV_TX(node_id, proto)))
 
-#define _SCMI_MBOX_CHAN_DECLARE_PRIV(node_id, proto, tx)			\
+#define _SCMI_MBOX_CHAN_DECLARE_PRIV(node_id, proto, idx)			\
 	static struct scmi_mbox_channel						\
-		    _SCMI_MBOX_CHAN_NAME(proto, tx) =				\
-		    _SCMI_MBOX_CHAN_DECLARE_PRIV_TX_RX(node_id, proto, tx)
+		    _SCMI_MBOX_CHAN_NAME(proto, idx) =				\
+		    _SCMI_MBOX_CHAN_DECLARE_PRIV_TX_RX(node_id, proto, idx)
 
 
-#define _SCMI_MBOX_CHAN_DECLARE(node_id, proto, tx)			\
-	_SCMI_MBOX_CHAN_DECLARE_PRIV(node_id, proto, tx);		\
-	SCMI_TRANSPORT_CHAN_DECLARE(node_id, proto, tx,			\
-				    &(_SCMI_MBOX_CHAN_NAME(proto, tx)));\
+#define _SCMI_MBOX_CHAN_DECLARE(node_id, proto, idx)				\
+	_SCMI_MBOX_CHAN_DECLARE_PRIV(node_id, proto, idx);			\
+	SCMI_TRANSPORT_CHAN_DECLARE(node_id, proto, idx,			\
+				    &(_SCMI_MBOX_CHAN_NAME(proto, idx)));	\
 
-#define _SCMI_MBOX_CHAN_DECLARE_OPTIONAL(node_id, proto, tx)		\
-	COND_CODE_1(DT_PROP_HAS_IDX(node_id, shmem, tx),		\
-		    (_SCMI_MBOX_CHAN_DECLARE(node_id, proto, tx)),	\
+#define _SCMI_MBOX_CHAN_DECLARE_OPTIONAL(node_id, proto, idx)		\
+	COND_CODE_1(DT_PROP_HAS_IDX(node_id, shmem, idx),		\
+		    (_SCMI_MBOX_CHAN_DECLARE(node_id, proto, idx)),	\
 		    ())
 
 #define SCMI_MBOX_PROTO_CHAN_DECLARE(node_id)					\

@@ -5,10 +5,19 @@ description: System Control and Management Interface (SCMI)
 
 compatible: "arm,scmi-clock"
 
-include: [base.yaml]
-
+include: [base.yaml, clock-controller.yaml]
 
 properties:
   shmem:
     type: phandles
 
+  reg:
+    required: true
+    const: [0x14]
+
+  "#clock-cells":
+    required: true
+    const: 1
+
+clock-cells:
+  - name

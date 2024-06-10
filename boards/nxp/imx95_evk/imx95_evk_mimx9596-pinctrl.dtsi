@@ -1,0 +1,30 @@
+/*
+ * Copyright 2024 NXP
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <nxp/nxp_imx/mimx9596-pinctrl.h>
+
+&scmi_iomuxc {
+	scmi_iomuxc_gpio_io14_lpuart3_tx: SCMI_IOMUXC_GPIO_IO14_LPUART3_TX {
+		pinmux = <
+			IMX95_PAD_GPIO_IO14__LPUART3_TX 0x31e
+		>;
+	};
+
+	scmi_iomuxc_gpio_io15_lpuart3_rx: SCMI_IOMUXC_GPIO_IO15_LPUART3_RX {
+		pinmux = <
+			IMX95_PAD_GPIO_IO15__LPUART3_RX 0x31e
+		>;
+	};
+};
+
+&pinctrl {
+	uart3_default: uart3_default {
+		group0 {
+			pinmux = <&scmi_iomuxc_gpio_io14_lpuart3_tx>,
+				 <&scmi_iomuxc_gpio_io15_lpuart3_rx>;
+		};
+	};
+};

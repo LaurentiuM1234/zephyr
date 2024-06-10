@@ -1380,7 +1380,7 @@ static const struct mcux_lpuart_config mcux_lpuart_##n##_config = {     \
 			    NULL,					\
 			    &mcux_lpuart_##n##_data,			\
 			    &mcux_lpuart_##n##_config,			\
-			    PRE_KERNEL_1,				\
+			    POST_KERNEL,				\
 			    CONFIG_SERIAL_INIT_PRIORITY,		\
 			    &mcux_lpuart_driver_api);			\
 

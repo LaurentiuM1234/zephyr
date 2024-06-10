@@ -5,16 +5,10 @@
  */
 
 #include <stdio.h>
-
-#include <zephyr/drivers/firmware/scmi/protocol.h>
-#include <zephyr/drivers/firmware/scmi/transport.h>
-
-struct cmd_data {
-	int status;
-	uint32_t version;
-};
+#include <errno.h>
 
 int main(void)
 {
-	while(1);
+	printf("Hello World!\n");
+	return 0;
 }

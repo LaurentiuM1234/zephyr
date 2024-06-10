@@ -8,8 +8,8 @@
 #define _INCLUDE_ZEPHYR_DRIVERS_FIRMWARE_SCMI_TRANSPORT_H_
 
 #include <zephyr/device.h>
-#include <zephyr/sys/mutex.h>
 #include <zephyr/drivers/firmware/scmi/protocol.h>
+#include <zephyr/drivers/firmware/scmi/common.h>
 
 #ifdef CONFIG_ARM_SCMI
 
@@ -33,7 +33,7 @@
 
 #define _SCMI_TRANSPORT_GET_RX_BASE_CHAN(node_id)				\
 	COND_CODE_1(_SCMI_TRANSPORT_PROTO_HAS_CHAN(DT_PARENT(node_id), 1),	\
-		    (&(SCMI_TRANSPORT_CHAN_NAME(proto, 1))),			\
+		    (&(SCMI_TRANSPORT_CHAN_NAME(SCMI_PROTOCOL_BASE, 1))),	\
 		    (NULL))
 
 #define SCMI_TRANSPORT_GET_TX_CHAN(node_id, proto)			\
@@ -46,17 +46,24 @@
 		    (&(SCMI_TRANSPORT_CHAN_NAME(proto, 1))),		\
 		    (_SCMI_TRANSPORT_GET_RX_BASE_CHAN(node_id)))
 
-struct scmi_channel;
+#define _SCMI_TRANSPORT_TX_CHAN_NAME(node_id, proto)			\
+	COND_CODE_1(_SCMI_TRANSPORT_PROTO_HAS_CHAN(node_id, 0),		\
+		    (SCMI_TRANSPORT_CHAN_NAME(proto, 0)),		\
+		    (SCMI_TRANSPORT_CHAN_NAME(SCMI_PROTOCOL_BASE, 0)))	\
 
-typedef void (*scmi_channel_cb)(struct scmi_channel *chan);
+#define SCMI_TRANSPORT_TX_CHAN_DECLARE_EXT(node_id, proto)\
+	extern struct scmi_channel _SCMI_TRANSPORT_TX_CHAN_NAME(node_id, proto);
 
-struct scmi_channel {
-	struct k_mutex lock;
-	struct k_sem sem;
-	void *priv;
-	scmi_channel_cb cb;
-	bool ready;
-};
+#define _SCMI_TRANSPORT_RX_CHAN_DECLARE_EXT_OPTIONAL(node_id, proto)			\
+	COND_CODE_1(_SCMI_TRANSPORT_PROTO_HAS_CHAN(node_id, 1),				\
+		    (extern struct scmi_channel SCMI_TRANSPORT_CHAN_NAME(proto, 1);),	\
+		    ())
+
+#define SCMI_TRANSPORT_RX_CHAN_DECLARE_EXT(node_id, proto)				\
+	COND_CODE_1(_SCMI_TRANSPORT_PROTO_HAS_CHAN(node_id, 1),				\
+		    (_SCMI_TRANSPORT_RX_CHAN_DECLARE_EXT(node_id, proto)),		\
+		    (_SCMI_TRANSPORT_RX_CHAN_DECLARE_EXT_OPTIONAL(DT_PARENT(node_id),	\
+								  SCMI_PROTOCOL_BASE)))
 
 struct scmi_transport_api {
 	int (*send_message)(const struct device *transport,

@@ -1,0 +1,9 @@
+# Copyright 2024 NXP
+
+config CLOCK_CONTROL_ARM_SCMI
+	bool "Some message here"
+	default y
+	depends on DT_HAS_ARM_SCMI_CLOCK_ENABLED
+	select ARM_SCMI_CLK_HELPERS
+	help
+	  Some message here.

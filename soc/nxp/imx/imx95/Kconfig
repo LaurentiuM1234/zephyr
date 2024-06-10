@@ -11,6 +11,7 @@ config SOC_MIMX9596_M7
 	select ARM_MPU # TODO: shouldn't this also imply CPU_HAS_ARM_MPU?
 	select CPU_HAS_ARM_MPU
 	select HAS_MCUX
+	select HAS_MCUX_IOMUXC
 
 config MCUX_CORE_SUFFIX
 	default "_cm7" if SOC_MIMX9596_M7
