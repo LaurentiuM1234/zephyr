@@ -37,7 +37,7 @@ static int scmi_mbox_send_message(const struct device *transport,
 		return ret;
 	}
 
-	ret = mbox_send_dt(&mbox_chan->a2p, NULL);
+	ret = mbox_send_dt(&mbox_chan->tx, NULL);
 	if (ret < 0) {
 		LOG_ERR("failed to ring doorbell: %d", ret);
 		return ret;
@@ -63,45 +63,45 @@ static int scmi_mbox_setup_chan(const struct device *transport,
 {
 	int ret;
 	struct scmi_mbox_channel *mbox_chan;
-	struct mbox_dt_spec *a2p_reply;
+	struct mbox_dt_spec *tx_reply;
 
 	mbox_chan = chan->priv;
 
 	/* TODO: this needs to be validated elsewhere */
-	if (tx && !mbox_chan->a2p.dev) {
-		LOG_ERR("tx channel missing a2p dbell");
+	if (tx && !mbox_chan->tx.dev) {
+		LOG_ERR("tx channel missing dbell");
 		return -EINVAL;
 	}
 
 	if (tx) {
-		if (mbox_chan->a2p_reply.dev) {
-			a2p_reply = &mbox_chan->a2p_reply;
+		if (mbox_chan->tx_reply.dev) {
+			tx_reply = &mbox_chan->tx_reply;
 		} else {
-			a2p_reply = &mbox_chan->a2p;
+			tx_reply = &mbox_chan->tx;
 		}
 
-		ret = mbox_register_callback_dt(a2p_reply, scmi_mbox_cb, chan);
+		ret = mbox_register_callback_dt(tx_reply, scmi_mbox_cb, chan);
 		if (ret < 0) {
-			LOG_ERR("failed to register a2p reply cb");
+			LOG_ERR("failed to register tx reply cb");
 			return ret;
 		}
 
-		ret = mbox_set_enabled_dt(a2p_reply, true);
+		ret = mbox_set_enabled_dt(tx_reply, true);
 		if (ret < 0) {
-			LOG_ERR("failed to enable a2p reply dbell");
+			LOG_ERR("failed to enable tx reply dbell");
 		}
 	} else {
-		if (mbox_chan->p2a.dev) {
-			ret = mbox_register_callback_dt(&mbox_chan->p2a,
+		if (mbox_chan->rx.dev) {
+			ret = mbox_register_callback_dt(&mbox_chan->rx,
 							scmi_mbox_cb, chan);
 			if (ret < 0) {
-				LOG_ERR("failed to register p2a cb");
+				LOG_ERR("failed to register rx cb");
 				return ret;
 			}
 
-			ret = mbox_set_enabled_dt(&mbox_chan->p2a, true);
+			ret = mbox_set_enabled_dt(&mbox_chan->rx, true);
 			if (ret < 0) {
-				LOG_ERR("failed to enable p2a dbell");
+				LOG_ERR("failed to enable rx dbell");
 				return ret;
 			}
 		}
@@ -116,15 +116,12 @@ static int scmi_mbox_setup_chan(const struct device *transport,
 	return 0;
 }
 
-struct scmi_transport_api scmi_mbox_api = {
+static struct scmi_transport_api scmi_mbox_api = {
 	.setup_chan = scmi_mbox_setup_chan,
 	.send_message = scmi_mbox_send_message,
 	.read_message = scmi_mbox_read_message,
 };
 
-static int scmi_mbox_init(const struct device *transport)
-{
-	return 0;
-}
-
-SCMI_MAILBOX_INST_DEFINE(0, &scmi_mbox_init, &scmi_mbox_api);
+DT_INST_SCMI_MAILBOX_DEFINE(0, PRE_KERNEL_1,
+			    CONFIG_ARM_SCMI_TRANSPORT_INIT_PRIORITY,
+			    &scmi_mbox_api);

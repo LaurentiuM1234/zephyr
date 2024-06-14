@@ -11,42 +11,33 @@
 #include <zephyr/drivers/firmware/scmi/transport.h>
 #include <zephyr/drivers/firmware/scmi/common.h>
 
-#define _SCMI_PROTOCOL_NAME(proto) CONCAT(scmi_protocol_, proto)
-
-#define _SCMI_PROTOCOL_DATA_DECLARE(node_id, proto, data)			\
-	STRUCT_SECTION_ITERABLE(scmi_protocol, _SCMI_PROTOCOL_NAME(proto)) =	\
+#define _DT_SCMI_PROTOCOL_DATA_DEFINE(node_id, data)				\
+	STRUCT_SECTION_ITERABLE(scmi_protocol, DT_SCMI_PROTOCOL_NAME(node_id))=	\
 	{									\
-		.id = proto,							\
-		.tx = SCMI_TRANSPORT_GET_TX_CHAN(node_id, proto),		\
-		.rx = SCMI_TRANSPORT_GET_RX_CHAN(node_id, proto),		\
+		.id = DT_REG_ADDR(node_id),					\
+		.rx = DT_SCMI_TRANSPORT_RX_CHAN(node_id),			\
+		.tx = DT_SCMI_TRANSPORT_TX_CHAN(node_id),			\
 		.priv = data,							\
 	}
 
-
 #define DT_SCMI_PROTOCOL_NAME(node_id)\
-	_SCMI_PROTOCOL_NAME(DT_REG_ADDR(node_id))
+	CONCAT(scmi_protocol_, DT_REG_ADDR(node_id))
 
 #define DT_INST_SCMI_PROTOCOL_NAME(inst)\
 	DT_SCMI_PROTOCOL_NAME(DT_INST(inst, DT_DRV_COMPAT))
 
-#define DT_INST_SCMI_PROTOCOL_DEFINE(inst, init, data, cfg, prio, api)		\
-	SCMI_TRANSPORT_TX_CHAN_DECLARE_EXT(DT_INST(inst, DT_DRV_COMPAT),	\
-					   DT_INST_REG_ADDR(inst))		\
-										\
-	SCMI_TRANSPORT_RX_CHAN_DECLARE_EXT(DT_INST(inst, DT_DRV_COMPAT),	\
-					   DT_INST_REG_ADDR(inst))		\
-										\
-	_SCMI_PROTOCOL_DATA_DECLARE(DT_INST(inst, DT_DRV_COMPAT),		\
-				    DT_INST_REG_ADDR(inst),			\
-				    data);					\
-										\
-DEVICE_DT_INST_DEFINE(inst, init, NULL, &DT_INST_SCMI_PROTOCOL_NAME(inst),	\
-		      cfg, POST_KERNEL, prio, api);
+#define DT_SCMI_PROTOCOL_DEFINE(node_id, init_fn, pm, data, config, level, prio, api)	\
+	DT_SCMI_TRANSPORT_CHANNELS_DECLARE(node_id)					\
+	_DT_SCMI_PROTOCOL_DATA_DEFINE(node_id, data);					\
+	DEVICE_DT_DEFINE(node_id, init_fn, pm, data, config, level, prio, api)
 
-#define DT_SCMI_PROTOCOL_DEFINE(node_id, data)					\
-	SCMI_TRANSPORT_TX_CHAN_DECLARE_EXT(node_id, DT_REG_ADDR(node_id))	\
-	SCMI_TRANSPORT_RX_CHAN_DECLARE_EXT(node_id, DT_REG_ADDR(node_id))	\
-	_SCMI_PROTOCOL_DATA_DECLARE(node_id, DT_REG_ADDR(node_id), data)
+#define DT_INST_SCMI_PROTOCOL_DEFINE(inst, init_fn, pm, data, config, level, prio, api)	\
+	DT_SCMI_PROTOCOL_DEFINE(DT_INST(inst, DT_DRV_COMPAT), init_fn,			\
+				pm, data, config, level, prio, api)
+
+#define DT_SCMI_PROTOCOL_DEFINE_NODEV(node_id, data)				\
+	DT_SCMI_TRANSPORT_CHANNELS_DECLARE(node_id)				\
+	_DT_SCMI_PROTOCOL_DATA_DEFINE(node_id, data)
 
 
 /* TODO: add note about this being in decimal */
@@ -63,6 +54,7 @@ struct scmi_protocol {
 	uint32_t id;
 	struct scmi_channel *tx;
 	struct scmi_channel *rx;
+	const struct device *transport;
 	void *priv;
 };
 

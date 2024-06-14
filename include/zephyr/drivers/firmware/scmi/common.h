@@ -27,7 +27,7 @@ enum scmi_message_type {
 	SCMI_NOTIFICATION = 0x3,
 };
 
-enum scmi_return_code {
+enum scmi_status_code {
 	SCMI_SUCCESS = 0,
 	SCMI_NOT_SUPPORTED = -1,
 	SCMI_INVALID_PARAMETERS = -2,
@@ -45,9 +45,6 @@ enum scmi_return_code {
 struct scmi_message {
 	uint32_t hdr;
 	uint32_t len;
-	/* note: it's up the the protocol to make sure the message
-	 * content can contain at least len bytes.
-	 */
 	void *content;
 };
 
@@ -59,6 +56,7 @@ struct scmi_channel {
 	void *priv;
 	scmi_channel_cb cb;
 	bool ready;
+	volatile bool received_reply;
 };
 
 static inline int scmi_ret_to_linux(int scmi_ret) {
@@ -91,5 +89,6 @@ static inline int scmi_ret_to_linux(int scmi_ret) {
 int scmi_core_send_message(struct scmi_protocol *proto,
 			   struct scmi_message *msg,
 			   struct scmi_message *reply);
+int scmi_core_transport_init(const struct device *transport);
 
 #endif /* _INCLUDE_ZEPHYR_DRIVERS_FIRMWARE_SCMI_COMMON_H_ */

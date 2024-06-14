@@ -6,7 +6,7 @@
 
 #include <zephyr/drivers/firmware/scmi/pinctrl.h>
 
-DT_SCMI_PROTOCOL_DEFINE(DT_INST(0, arm_scmi_pinctrl), NULL);
+DT_SCMI_PROTOCOL_DEFINE_NODEV(DT_INST(0, arm_scmi_pinctrl), NULL);
 
 int scmi_pinctrl_settings_configure(struct scmi_pinctrl_settings *settings)
 {

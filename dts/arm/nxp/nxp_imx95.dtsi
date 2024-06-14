@@ -49,7 +49,7 @@
 			compatible = "arm,scmi";
 			shmem = <&scmi_res0>, <&scmi_res1>;
 			mboxes = <&mu5 0>, <&mu5 1>;
-			mbox-names = "a2p", "p2a";
+			mbox-names = "tx", "rx";
 
 			#address-cells = <1>;
 			#size-cells = <0>;

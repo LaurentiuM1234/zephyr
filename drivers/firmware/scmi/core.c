@@ -18,30 +18,19 @@ LOG_MODULE_REGISTER(scmi_core);
 /* TODO: maybe turn this into a configuration? */
 #define SCMI_CHAN_SEM_TIMEOUT_USEC 1000
 
-struct scmi_core {
-	const struct device *transport;
-};
-
-static struct scmi_core core = {
-#ifdef CONFIG_ARM_SCMI
-	/* shmem + dbell-based transport */
-	.transport = DEVICE_DT_GET(DT_INST(0, arm_scmi)),
-#endif /* CONFIG_ARM_SCMI */
-};
-
 static void scmi_core_reply_cb(struct scmi_channel *chan)
 {
-	k_sem_give(&chan->sem);
+	if (k_is_pre_kernel()) {
+		chan->received_reply = true;
+	} else {
+		k_sem_give(&chan->sem);
+	}
 
 	return;
 }
 
-static void scmi_core_notification_cb(struct scmi_channel *chan)
-{
-	return;
-}
-
-static int scmi_core_setup_chan(struct scmi_channel *chan, bool tx)
+static int scmi_core_setup_chan(const struct device *transport,
+				struct scmi_channel *chan, bool tx)
 {
 	int ret;
 
@@ -53,18 +42,17 @@ static int scmi_core_setup_chan(struct scmi_channel *chan, bool tx)
 		return 0;
 	}
 
-	/* setup core-related channel data */
 	k_mutex_init(&chan->lock);
 	k_sem_init(&chan->sem, 0, 1);
 
+	chan->received_reply = false;
+
 	if (tx) {
 		chan->cb = scmi_core_reply_cb;
-	} else {
-		chan->cb = scmi_core_notification_cb;
 	}
 
 	/* setup transport-related channel data */
-	ret = scmi_transport_setup_chan(core.transport, chan, tx);
+	ret = scmi_transport_setup_chan(transport, chan, tx);
 	if (ret < 0) {
 		LOG_ERR("failed to setup channel");
 		return ret;
@@ -75,9 +63,32 @@ static int scmi_core_setup_chan(struct scmi_channel *chan, bool tx)
 	return 0;
 }
 
-int scmi_core_send_message(struct scmi_protocol *proto,
-			   struct scmi_message *msg,
-			   struct scmi_message *reply)
+static int scmi_core_send_message_pre_kernel(struct scmi_protocol *proto,
+					     struct scmi_message *msg,
+					     struct scmi_message *reply)
+{
+	int ret;
+
+	ret = scmi_transport_send_message(proto->transport, proto->tx, msg);
+	if (ret < 0) {
+		return ret;
+	}
+
+	while (!proto->tx->received_reply);
+
+	proto->tx->received_reply = false;
+
+	ret = scmi_transport_read_message(proto->transport, proto->tx, reply);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return ret;
+}
+
+static int scmi_core_send_message_post_kernel(struct scmi_protocol *proto,
+					      struct scmi_message *msg,
+					      struct scmi_message *reply)
 {
 	int ret;
 
@@ -95,7 +106,7 @@ int scmi_core_send_message(struct scmi_protocol *proto,
 		return ret;
 	}
 
-	ret = scmi_transport_send_message(core.transport, proto->tx, msg);
+	ret = scmi_transport_send_message(proto->transport, proto->tx, msg);
 	if (ret < 0) {
 		LOG_ERR("failed to send message");
 		goto out_release_mutex;
@@ -108,7 +119,7 @@ int scmi_core_send_message(struct scmi_protocol *proto,
 		goto out_release_mutex;
 	}
 
-	ret = scmi_transport_read_message(core.transport, proto->tx, reply);
+	ret = scmi_transport_read_message(proto->transport, proto->tx, reply);
 	if (ret < 0) {
 		LOG_ERR("failed to read reply");
 		goto out_release_mutex;
@@ -120,26 +131,40 @@ out_release_mutex:
 	return ret;
 }
 
-static int scmi_core_init(void)
+int scmi_core_send_message(struct scmi_protocol *proto,
+			   struct scmi_message *msg,
+			   struct scmi_message *reply)
 {
-	int ret;
+	if (!proto->tx) {
+		return -ENODEV;
+	}
 
-	if (!core.transport) {
-		LOG_ERR("no transport registered to core");
+	if (!proto->tx->ready) {
 		return -EINVAL;
 	}
 
+	if (k_is_pre_kernel()) {
+		return scmi_core_send_message_pre_kernel(proto, msg, reply);
+	} else {
+		return scmi_core_send_message_post_kernel(proto, msg, reply);
+	}
+}
+
+static int scmi_core_protocol_setup(const struct device *transport)
+{
+	int ret;
+
 	STRUCT_SECTION_FOREACH(scmi_protocol, it) {
-		/* sanity checks */
-		/* TODO: for now, dynamic channel setup is not allowed */
+		/* bind transport */
+		it->transport = transport;
+
+		/* TX channel is mandatory */
 		if (!it->tx) {
-			LOG_ERR("protocol %d has invalid TX channel", it->id);
 			return -EINVAL;
 		}
 
-		ret = scmi_core_setup_chan(it->tx, true);
+		ret = scmi_core_setup_chan(transport, it->tx, true);
 		if (ret < 0) {
-			LOG_ERR("failed to setup TX channel for %d", it->id);
 			return ret;
 		}
 
@@ -148,9 +173,8 @@ static int scmi_core_init(void)
 			continue;
 		}
 
-		ret = scmi_core_setup_chan(it->rx, false);
+		ret = scmi_core_setup_chan(transport, it->rx, false);
 		if (ret < 0) {
-			LOG_ERR("failed to setup RX channel for %d", it->id);
 			return ret;
 		}
 	}
@@ -158,4 +182,15 @@ static int scmi_core_init(void)
 	return 0;
 }
 
-SYS_INIT(scmi_core_init, POST_KERNEL, CONFIG_ARM_SCMI_CORE_INIT_PRIORITY);
+int scmi_core_transport_init(const struct device *transport)
+{
+	int ret;
+
+	ret = scmi_transport_init(transport);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return scmi_core_protocol_setup(transport);
+}
+
