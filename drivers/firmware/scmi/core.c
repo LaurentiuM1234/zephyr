@@ -18,6 +18,34 @@ LOG_MODULE_REGISTER(scmi_core);
 /* TODO: maybe turn this into a configuration? */
 #define SCMI_CHAN_SEM_TIMEOUT_USEC 1000
 
+int scmi_status_to_linux(int scmi_status)
+{
+	switch (scmi_status) {
+	case SCMI_SUCCESS:
+		return 0;
+	case SCMI_NOT_SUPPORTED:
+		return -EOPNOTSUPP;
+	case SCMI_INVALID_PARAMETERS:
+		return -EINVAL;
+	case SCMI_DENIED:
+		return -EACCES;
+	case SCMI_NOT_FOUND:
+		return -ENOENT;
+	case SCMI_OUT_OF_RANGE:
+		return -ERANGE;
+	case SCMI_IN_USE:
+	case SCMI_BUSY:
+		return -EBUSY;
+	case SCMI_PROTOCOL_ERROR:
+		return -EPROTO;
+	case SCMI_COMMS_ERROR:
+	case SCMI_GENERIC_ERROR:
+	case SCMI_HARDWARE_ERROR:
+	default:
+		return -EIO;
+	}
+}
+
 static void scmi_core_reply_cb(struct scmi_channel *chan)
 {
 	if (k_is_pre_kernel()) {
@@ -63,7 +91,7 @@ static int scmi_core_setup_chan(const struct device *transport,
 	return 0;
 }
 
-static int scmi_core_send_message_pre_kernel(struct scmi_protocol *proto,
+static int scmi_send_message_pre_kernel(struct scmi_protocol *proto,
 					     struct scmi_message *msg,
 					     struct scmi_message *reply)
 {
@@ -86,7 +114,7 @@ static int scmi_core_send_message_pre_kernel(struct scmi_protocol *proto,
 	return ret;
 }
 
-static int scmi_core_send_message_post_kernel(struct scmi_protocol *proto,
+static int scmi_send_message_post_kernel(struct scmi_protocol *proto,
 					      struct scmi_message *msg,
 					      struct scmi_message *reply)
 {
@@ -131,7 +159,7 @@ out_release_mutex:
 	return ret;
 }
 
-int scmi_core_send_message(struct scmi_protocol *proto,
+int scmi_send_message(struct scmi_protocol *proto,
 			   struct scmi_message *msg,
 			   struct scmi_message *reply)
 {
@@ -144,9 +172,9 @@ int scmi_core_send_message(struct scmi_protocol *proto,
 	}
 
 	if (k_is_pre_kernel()) {
-		return scmi_core_send_message_pre_kernel(proto, msg, reply);
+		return scmi_send_message_pre_kernel(proto, msg, reply);
 	} else {
-		return scmi_core_send_message_post_kernel(proto, msg, reply);
+		return scmi_send_message_post_kernel(proto, msg, reply);
 	}
 }
 

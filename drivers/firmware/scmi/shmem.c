@@ -5,9 +5,9 @@
  */
 
 #include <zephyr/drivers/firmware/scmi/shmem.h>
+#include <zephyr/drivers/firmware/scmi/protocol.h>
 #include <zephyr/logging/log.h>
 #include <string.h>
-#include <errno.h>
 
 LOG_MODULE_REGISTER(arm_scmi_shmem);
 

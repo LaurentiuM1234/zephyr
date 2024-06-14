@@ -15,7 +15,7 @@ int scmi_pinctrl_settings_configure(struct scmi_pinctrl_settings *settings)
 	uint32_t config_num;
 	int32_t status, ret;
 
-	proto = &DT_SCMI_PROTOCOL_NAME(DT_INST(0, arm_scmi_pinctrl));
+	proto = &SCMI_PROTOCOL_NAME(SCMI_PROTOCOL_PINCTRL);
 
 	/* sanity checks */
 	if (!settings) {
@@ -42,13 +42,13 @@ int scmi_pinctrl_settings_configure(struct scmi_pinctrl_settings *settings)
 	reply.len = sizeof(status);
 	reply.content = &status;
 
-	ret = scmi_core_send_message(proto, &msg, &reply);
+	ret = scmi_send_message(proto, &msg, &reply);
 	if (ret < 0) {
 		return ret;
 	}
 
-	if (status < 0) {
-		return scmi_ret_to_linux(status);
+	if (status != SCMI_SUCCESS) {
+		return scmi_status_to_linux(status);
 	}
 
 	return 0;

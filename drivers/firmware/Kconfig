@@ -5,9 +5,8 @@ menu "Firmware drivers"
 
 config ARM_SCMI
 	bool "TODO"
-	default y
+	default n
 	depends on ARM || ARM64
-	depends on DT_HAS_ARM_SCMI_ENABLED
 	help
 	  TODO
 

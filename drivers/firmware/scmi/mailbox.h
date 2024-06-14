@@ -8,6 +8,8 @@
 #define _ZEPHYR_DRIVERS_FIRMWARE_SCMI_MAILBOX_H_
 
 #include <zephyr/drivers/firmware/scmi/transport.h>
+#include <zephyr/drivers/firmware/scmi/util.h>
+#include <zephyr/drivers/firmware/scmi/protocol.h>
 #include <zephyr/drivers/firmware/scmi/shmem.h>
 #include <zephyr/drivers/mbox.h>
 #include <zephyr/kernel.h>
@@ -53,7 +55,7 @@
 
 #define _SCMI_MBOX_CHAN_DEFINE(node_id, proto, idx)				\
 	_SCMI_MBOX_CHAN_DEFINE_PRIV(node_id, proto, idx);			\
-	SCMI_TRANSPORT_CHAN_DEFINE(node_id, proto, idx,				\
+	DT_SCMI_TRANSPORT_CHAN_DEFINE(node_id, idx, proto,			\
 				    &(_SCMI_MBOX_CHAN_NAME(proto, idx)));	\
 
 #define _SCMI_MBOX_CHAN_DEFINE_OPTIONAL(node_id, proto, idx)		\

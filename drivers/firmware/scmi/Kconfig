@@ -3,6 +3,25 @@
 
 if ARM_SCMI
 
+config ARM_SCMI_MAILBOX_TRANSPORT
+	bool "SCMI transport based on shared memory and doorbells"
+	default y
+	depends on DT_HAS_ARM_SCMI_ENABLED
+	select ARM_SCMI_TRANSPORT_HAS_STATIC_CHANNELS
+	help
+	  TODO
+
+config ARM_SCMI_TRANSPORT_HAS_STATIC_CHANNELS
+	bool "Transport layer has static channels"
+	default n
+	help
+	  Enable this if the SCMI transport layer uses static channels.
+	  What this is means is that the transport layer will place all
+	  of its channels in a special section from which the protocols
+	  will be able to obtain references. This is option is recommended
+	  for transport layers which don't require a complicated channel
+	  allocation scheme.
+
 config ARM_SCMI_SHMEM_INIT_PRIORITY
 	int "TODO"
 	default 1
@@ -29,7 +48,15 @@ config ARM_SCMI_CORE_HEAP_SIZE
 
 config ARM_SCMI_CLK_HELPERS
 	bool "TODO"
-	default n
+	default y
+	depends on DT_HAS_ARM_SCMI_CLOCK_ENABLED
+	help
+	  TODO
+
+config ARM_SCMI_PINCTRL_HELPERS
+	bool "TODO"
+	default y
+	depends on DT_HAS_ARM_SCMI_PINCTRL_ENABLED
 	help
 	  TODO
 

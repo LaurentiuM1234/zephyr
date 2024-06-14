@@ -8,6 +8,8 @@
 #define _INCLUDE_ZEPHYR_DRIVERS_FIRMWARE_SCMI_CLK_H_
 
 #include <zephyr/drivers/firmware/scmi/protocol.h>
+#include <zephyr/drivers/firmware/scmi/util.h>
+#include <zephyr/drivers/firmware/scmi/transport.h>
 
 #define SCMI_CLK_CONFIG_DISABLE_ENABLE_MASK GENMASK(1, 0)
 #define SCMI_CLK_CONFIG_ENABLE_DISABLE(x)\

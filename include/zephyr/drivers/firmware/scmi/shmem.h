@@ -9,13 +9,14 @@
 
 #include <zephyr/device.h>
 #include <zephyr/arch/cpu.h>
-#include <zephyr/drivers/firmware/scmi/protocol.h>
 #include <errno.h>
 
 #define SCMI_SHMEM_CHAN_STATUS_BUSY_BIT BIT(0)
 #define SCMI_SHMEM_CHAN_STATUS_ERR_BIT BIT(1)
 
 #define SCMI_SHMEM_CHAN_FLAG_IRQ_BIT BIT(0)
+
+struct scmi_message;
 
 int scmi_shmem_write_message(const struct device *shmem,
 			     struct scmi_message *msg);

@@ -14,9 +14,9 @@
 #define SCMI_PINCTRL_NO_FUNCTION 0xFFFFFFFF
 
 #define SCMI_PINCTRL_CONFIG_ATTRIBUTES(fid_valid, cfg_num, selector)	\
-	(_SCMI_FIELD_MAKE(fid_valid, BIT(1), 10) |			\
-	 _SCMI_FIELD_MAKE(cfg_num, GENMASK(7, 0), 2) |			\
-	 _SCMI_FIELD_MAKE(selector, GENMASK(1, 0), 0))
+	(SCMI_FIELD_MAKE(fid_valid, BIT(1), 10) |			\
+	 SCMI_FIELD_MAKE(cfg_num, GENMASK(7, 0), 2) |			\
+	 SCMI_FIELD_MAKE(selector, GENMASK(1, 0), 0))
 
 #define SCMI_PINCTRL_SELECTOR_PIN 0x0
 #define SCMI_PINCTRL_SELECTOR_GROUP 0x1

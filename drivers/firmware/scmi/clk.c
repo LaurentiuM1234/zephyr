@@ -47,13 +47,13 @@ int scmi_clock_rate_get(struct scmi_protocol *proto,
 	reply.len = sizeof(reply_buffer);
 	reply.content = &reply_buffer;
 
-	ret = scmi_core_send_message(proto, &msg, &reply);
+	ret = scmi_send_message(proto, &msg, &reply);
 	if (ret < 0) {
 		return ret;
 	}
 
-	if (reply_buffer.status < 0) {
-		return scmi_ret_to_linux(reply_buffer.status);
+	if (reply_buffer.status != SCMI_SUCCESS) {
+		return scmi_status_to_linux(reply_buffer.status);
 	}
 
 	*rate = reply_buffer.rate[0];
@@ -100,13 +100,13 @@ int scmi_clock_config_set(struct scmi_protocol *proto,
 	reply.len = sizeof(status);
 	reply.content = &status;
 
-	ret = scmi_core_send_message(proto, &msg, &reply);
+	ret = scmi_send_message(proto, &msg, &reply);
 	if (ret < 0) {
 		return ret;
 	}
 
-	if (status < 0) {
-		return scmi_ret_to_linux(status);
+	if (status != SCMI_SUCCESS) {
+		return scmi_status_to_linux(status);
 	}
 
 	return 0;
@@ -137,13 +137,13 @@ int scmi_clock_protocol_attributes(struct scmi_protocol *proto, uint32_t *attrib
 	reply.len = sizeof(reply_buffer);
 	reply.content = &reply_buffer;
 
-	ret = scmi_core_send_message(proto, &msg, &reply);
+	ret = scmi_send_message(proto, &msg, &reply);
 	if (ret < 0) {
 		return ret;
 	}
 
-	if (reply_buffer.status < 0) {
-		return scmi_ret_to_linux(reply_buffer.status);
+	if (reply_buffer.status != 0) {
+		return scmi_status_to_linux(reply_buffer.status);
 	}
 
 	*attributes = reply_buffer.attributes;

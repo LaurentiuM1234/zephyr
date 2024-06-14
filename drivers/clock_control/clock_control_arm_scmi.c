@@ -5,6 +5,7 @@
  */
 
 #include <zephyr/drivers/firmware/scmi/clk.h>
+#include <zephyr/drivers/firmware/scmi/util.h>
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/logging/log.h>
 
