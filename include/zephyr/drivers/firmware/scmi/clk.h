@@ -35,6 +35,9 @@
 
 #define SCMI_CLK_PROTOCOL_SUPPORTED_VERSION	0x30000
 
+/** number of characters that make up the clock name */
+#define SCMI_CLK_NAME_LEN 64
+
 /**
  * @struct scmi_clock_config
  *
@@ -58,6 +61,31 @@ struct scmi_clock_rate_config {
 	uint32_t clk_id;
 	uint32_t rate[2];
 };
+
+#define SCMI_CLOCK_ENABLED(attributes)\
+	((attributes) & BIT(0))
+
+struct scmi_clock_attributes {
+	int32_t status;
+	uint32_t attributes;
+#define SCMI_CLOCK_NAME_LEN 16
+	uint8_t clock_name[SCMI_CLOCK_NAME_LEN];
+	uint32_t clock_enable_delay;
+} __packed;
+
+struct scmi_clock_parents {
+	int32_t status;
+#define SCMI_CLOCK_PARENT_NUM(flags) ((flags) & GENMASK(7, 0))
+	uint32_t flags;
+#define SCMI_CLOCK_MAX_NUM_PARENTS 255
+	uint32_t possible_parents[SCMI_CLOCK_MAX_NUM_PARENTS];
+} __packed;
+
+struct scmi_clock_rates {
+	int32_t status;
+	uint32_t num_rates_flags;
+	uint32_t rates[SCMI_CLOCK_MAX_NUM_RATES];
+} __packed;
 
 /**
  * @brief Clock protocol command message IDs
@@ -156,6 +184,13 @@ int scmi_clock_parent_get(struct scmi_protocol *proto, uint32_t clk_id, uint32_t
  * @retval negative errno if failure
  */
 int scmi_clock_parent_set(struct scmi_protocol *proto, uint32_t clk_id, uint32_t parent_id);
+
+int scmi_clock_attributes(struct scmi_protocol *proto, uint32_t clk_id,
+			  struct scmi_clock_attributes *attributes);
+
+int scmi_clock_possible_parents_get(struct scmi_protocol *proto,
+				    uint32_t clk_id, uint32_t skip_parents,
+				    struct scmi_clock_parents *parents);
 
 /**
  * @}

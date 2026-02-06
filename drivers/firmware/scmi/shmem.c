@@ -77,19 +77,6 @@ int scmi_shmem_read_message(const struct device *shmem, struct scmi_message *msg
 		return -EINVAL;
 	}
 
-	if (cfg->size < (sizeof(*layout) + msg->len)) {
-		LOG_ERR("message doesn't fit in shmem area");
-		return -EINVAL;
-	}
-
-	/* mismatch between expected reply size and actual size? */
-	if (msg->len != (layout->len - sizeof(layout->msg_hdr))) {
-		LOG_ERR("bad message len. Expected 0x%x, got 0x%x",
-			msg->len,
-			(uint32_t)(layout->len - sizeof(layout->msg_hdr)));
-		return -EINVAL;
-	}
-
 	/* header match? */
 	if (layout->msg_hdr != msg->hdr) {
 		LOG_ERR("bad message header. Expected 0x%x, got 0x%x",
@@ -104,7 +91,7 @@ int scmi_shmem_read_message(const struct device *shmem, struct scmi_message *msg
 
 	if (msg->content) {
 		scmi_shmem_memcpy(POINTER_TO_UINT(msg->content),
-				  data->regmap + sizeof(*layout), msg->len);
+				  data->regmap + sizeof(*layout), layout->len - 0x4);
 	}
 
 	return 0;

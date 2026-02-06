@@ -33,6 +33,11 @@ struct scmi_clock_parent_config {
 	uint32_t parent_id;
 };
 
+struct scmi_possible_parents {
+	uint32_t clk_id;
+	uint32_t skip_parents;
+};
+
 int scmi_clock_rate_get(struct scmi_protocol *proto,
 			uint32_t clk_id, uint32_t *rate)
 {
@@ -279,4 +284,68 @@ int scmi_clock_protocol_attributes(struct scmi_protocol *proto, uint32_t *attrib
 	*attributes = reply_buffer.attributes;
 
 	return 0;
+}
+
+int scmi_clock_attributes(struct scmi_protocol *proto, uint32_t clk_id,
+			  struct scmi_clock_attributes *attributes)
+{
+	struct scmi_message msg, reply;
+	int ret;
+
+	if (!proto || !attributes) {
+		return -EINVAL;
+	}
+
+	if (proto->id != SCMI_PROTOCOL_CLOCK) {
+		return -EINVAL;
+	}
+
+	msg.hdr = SCMI_MESSAGE_HDR_MAKE(SCMI_CLK_MSG_CLOCK_ATTRIBUTES,
+					SCMI_COMMAND, proto->id, 0x0);
+	msg.len = sizeof(clk_id);
+	msg.content = &clk_id;
+
+	reply.hdr = msg.hdr;
+	reply.len = sizeof(*attributes);
+	reply.content = attributes;
+
+	ret = scmi_send_message(proto, &msg, &reply, k_is_pre_kernel());
+	if (ret < 0) {
+		return ret;
+	}
+
+	return scmi_status_to_errno(attributes->status);
+}
+
+int scmi_clock_possible_parents_get(struct scmi_protocol *proto,
+				    uint32_t clk_id, uint32_t skip_parents,
+				    struct scmi_clock_parents *parents)
+{
+	struct scmi_possible_parents content = { .clk_id = clk_id, .skip_parents = skip_parents };
+	struct scmi_message msg, reply;
+	int ret;
+
+	if (!proto || !parents) {
+		return -EINVAL;
+	}
+
+	if (proto->id != SCMI_PROTOCOL_CLOCK) {
+		return -EINVAL;
+	}
+
+	msg.hdr = SCMI_MESSAGE_HDR_MAKE(SCMI_CLK_MSG_CLOCK_POSSIBLE_PARENTS_GET,
+					SCMI_COMMAND, proto->id, 0x0);
+	msg.len = sizeof(content);
+	msg.content = &content;
+
+	reply.hdr = msg.hdr;
+	reply.len = sizeof(*parents);
+	reply.content = parents;
+
+	ret = scmi_send_message(proto, &msg, &reply, k_is_pre_kernel());
+	if (ret) {
+		return ret;
+	}
+
+	return scmi_status_to_errno(parents->status);
 }
